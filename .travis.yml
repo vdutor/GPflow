@@ -20,8 +20,8 @@ before_install:
     - source activate condaenv
     - conda install nose # install nose via conda to make sure nosetest run in the conda environment
     - conda install scipy # GPflow needs scipy: installing through conda is easier than relying on setup.py
-    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; pip install http://mlg.eng.cam.ac.uk/matthews/GPflow/python_packages/version_0.3/osx/tensorflow-0.7.1-py2-none-any.whl ; fi
-    - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; pip install http://mlg.eng.cam.ac.uk/matthews/GPflow/python_packages/version_0.3/linux/tensorflow-0.7.1-py2-none-any.whl ; fi
+    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then pip install http://mlg.eng.cam.ac.uk/matthews/GPflow/python_packages/version_0.3/osx/tensorflow-0.7.1-py2-none-any.whl ; fi
+    - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then pip install http://mlg.eng.cam.ac.uk/matthews/GPflow/python_packages/version_0.3/linux/tensorflow-0.7.1-py2-none-any.whl ; fi
     - pip install codecov
 
 install:
