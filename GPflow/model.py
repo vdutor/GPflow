@@ -362,6 +362,9 @@ class GPModel(Model):
         """
         Compute the mean and covariance matrix of the latent function(s) at the
         points Xnew.
+
+        Arguments:
+          Xnew: a numpy array of points at which to predict
         """
         return self.build_predict(Xnew, full_cov=True)
 
@@ -370,6 +373,9 @@ class GPModel(Model):
         """
         Produce samples from the posterior latent function(s) at the points
         Xnew.
+
+        Arguments:
+          Xnew: a numpy array of points at which to predict
         """
         mu, var = self.build_predict(Xnew, full_cov=True)
         samples = []
@@ -382,6 +388,9 @@ class GPModel(Model):
     def predict_y(self, Xnew):
         """
         Compute the mean and variance of held-out data at the points Xnew
+
+        Arguments:
+          Xnew: a numpy array of points at which to predict
         """
         pred_f_mean, pred_f_var = self.build_predict(Xnew)
         return self.likelihood.predict_mean_and_var(pred_f_mean, pred_f_var)
@@ -391,6 +400,10 @@ class GPModel(Model):
     def predict_density(self, Xnew, Ynew):
         """
         Compute the (log) density of the data Ynew at the points Xnew
+
+        Arguments:
+          Xnew: a numpy array of the input points at which to predict
+          Ynew: the corresponding values at which to compute the predictive density
 
         Note that this computes the log denisty of the data individually,
         ignoring correlations between them. The result is a matrix the same
