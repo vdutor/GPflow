@@ -2,6 +2,7 @@ import GPflow
 import tensorflow as tf
 import numpy as np
 import unittest
+import six
 
 
 class TestPredictConditional(unittest.TestCase):
@@ -72,7 +73,9 @@ class TestQuadrature(unittest.TestCase):
     def test_var_exp(self):
         #get all the likelihoods where variational expectations has been overwritten
         liks = [l() for l in GPflow.likelihoods.Likelihood.__subclasses__()
-                if l.variational_expectations.__func__ is not GPflow.likelihoods.Likelihood.variational_expectations.__func__]
+                if six.get_method_function(l.variational_expectations)
+                is not
+                six.get_method_function(GPflow.likelihoods.Likelihood.variational_expectations)]
         for l in liks:
             x_data = l.get_free_state()
             x = tf.placeholder('float64')
@@ -87,9 +90,11 @@ class TestQuadrature(unittest.TestCase):
             self.failUnless(np.allclose(F1, F2, 1e-6, 1e-6))
 
     def test_pred_density(self):
-        #get all the likelihoods where predict_density  has been overwritten
+        # get all the likelihoods where predict_density  has been overwritten
         liks = [l() for l in GPflow.likelihoods.Likelihood.__subclasses__()
-                if l.predict_density.__func__ is not GPflow.likelihoods.Likelihood.predict_density.__func__]
+                if six.get_method_function(l.predict_density)
+                is not 
+                six.get_method_function(GPflow.likelihoods.Likelihood.predict_density)]
         for l in liks:
             x_data = l.get_free_state()
             #make parameters if needed
