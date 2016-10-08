@@ -25,7 +25,7 @@ if sys.platform == "darwin":
     compile_command += " -undefined dynamic_lookup"
 elif sys.platform.startswith("linux"):
     gcc_version = int(re.search('\d+.', os.popen("gcc --version").read()).group()[0])
-    if gcc_version == 5:
+    if gcc_version > 4:
         compile_command += " -D_GLIBCXX_USE_CXX11_ABI=0"
 os.system(compile_command)
 
@@ -44,7 +44,8 @@ setup(name='GPflow',
       package_dir={'GPflow': 'GPflow'},
       py_modules=['GPflow.__init__'],
       test_suite='testing',
-      install_requires=['numpy>=1.9', 'scipy>=0.16', 'tensorflow>=0.10'],
+      install_requires=['numpy>=1.9', 'scipy>=0.16', 'tensorflow>=0.11',
+                        'pandas>=0.19'],
       classifiers=['License :: OSI Approved :: BSD License',
                    'Natural Language :: English',
                    'Operating System :: MacOS :: MacOS X',
