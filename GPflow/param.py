@@ -501,6 +501,7 @@ class AutoFlow:
         @wraps(tf_method)
         def runnable(instance, *np_args):
             storage_name = '_' + tf_method.__name__ + '_AF_storage'
+            print storage_name
             if hasattr(instance, storage_name):
                 # the method has been compiled already, get things out of storage
                 storage = getattr(instance, storage_name)
@@ -518,7 +519,23 @@ class AutoFlow:
             feed_dict = dict(zip(storage['tf_args'], np_args))
             feed_dict[storage['free_vars']] = instance.get_free_state()
             feed_dict.update(instance.get_feed_dict())
-            return storage['session'].run(storage['tf_result'], feed_dict=feed_dict)
+
+            run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            run_metadata = tf.RunMetadata()
+
+            res =  storage['session'].run(storage['tf_result'],
+                                          feed_dict=feed_dict,
+                                          options=run_options,
+                                          run_metadata=run_metadata)
+
+            from tensorflow.python.client import timeline  
+
+            tl = timeline.Timeline(run_metadata.step_stats)
+            ctf = tl.generate_chrome_trace_format()
+            with open('timeline.json', 'w') as f:
+                f.write(ctf)
+
+            return res
 
         return runnable
 
