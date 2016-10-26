@@ -520,20 +520,26 @@ class AutoFlow:
             feed_dict[storage['free_vars']] = instance.get_free_state()
             feed_dict.update(instance.get_feed_dict())
 
-            run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-            run_metadata = tf.RunMetadata()
+            # run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            # run_metadata = tf.RunMetadata()
 
             res =  storage['session'].run(storage['tf_result'],
                                           feed_dict=feed_dict,
                                           options=run_options,
                                           run_metadata=run_metadata)
 
-            from tensorflow.python.client import timeline  
+            # import os, sys
+            # summary_file_path = os.path.split(os.path.abspath(__file__))[0] + '/summaries' 
+            # writer = tf.train.SummaryWriter("sum")
+            # writer.add_run_metadata(run_metadata, 'test')
+            # writer.close()
+            # from tensorflow.python.client import timeline  
 
-            tl = timeline.Timeline(run_metadata.step_stats)
-            ctf = tl.generate_chrome_trace_format()
-            with open('timeline.json', 'w') as f:
-                f.write(ctf)
+            # tl = timeline.Timeline(run_metadata.step_stats)
+            # ctf = tl.generate_chrome_trace_format()
+            # with open('timeline.json', 'w') as f:
+                # f.write(ctf)
+
 
             return res
 
