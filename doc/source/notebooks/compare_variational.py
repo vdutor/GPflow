@@ -1,7 +1,7 @@
 import GPflow
 import numpy as np
 from matplotlib import pyplot as plt
-from IPython import embed
+# from IPython import embed
 
 nPoints = 3
 rng =np.random.RandomState(4)
@@ -37,10 +37,12 @@ def plot(m, color='b'):
     mu, var = m.predict_y(xx)
     plt.plot(xx, mu, color, lw=2)
     plt.plot(xx, mu+ 2*np.sqrt(var), color, xx, mu-2*np.sqrt(var), color, lw=1)
+    plt.show()
 
 plt.figure(figsize=(12,8))
 plot(m2, 'r')
 plot(m3, 'g')
 plot(m4, 'y')
 plt.plot(X, Y, 'kx')
-embed()
+plt.show()
+# embed()

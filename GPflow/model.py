@@ -187,7 +187,7 @@ class Model(Parameterized):
                               return_logprobs=return_logprobs, RNG=RNG)
 
     def optimize(self, method='L-BFGS-B', tol=None, callback=None,
-                 maxiter=1000, **kw):
+                 maxiter=10000, **kw):
         """
         Optimize the model by maximizing the likelihood (possibly with the
         priors also) with respect to any free variables.
@@ -228,7 +228,13 @@ class Model(Parameterized):
         try:
             iteration = 0
             while iteration < maxiter:
+                # print("here")
                 self._session.run(opt_step, feed_dict=self.get_feed_dict())
+                if iteration % 1000 == 999:
+                    print("optimization midstage result: {}/{}".format(iteration, maxiter))
+                    # x = self._session.run(self._free_vars)
+                    # fun,_  = self._objective(x)
+                    # print(fun)
                 if callback is not None:
                     callback(self._session.run(self._free_vars))
                 iteration += 1

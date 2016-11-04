@@ -501,7 +501,7 @@ class AutoFlow:
         @wraps(tf_method)
         def runnable(instance, *np_args):
             storage_name = '_' + tf_method.__name__ + '_AF_storage'
-            print storage_name
+            # print storage_name
             if hasattr(instance, storage_name):
                 # the method has been compiled already, get things out of storage
                 storage = getattr(instance, storage_name)
@@ -524,9 +524,9 @@ class AutoFlow:
             # run_metadata = tf.RunMetadata()
 
             res =  storage['session'].run(storage['tf_result'],
-                                          feed_dict=feed_dict,
-                                          options=run_options,
-                                          run_metadata=run_metadata)
+                                          feed_dict=feed_dict)
+                                          # options=run_options,
+                                          # run_metadata=run_metadata)
 
             # import os, sys
             # summary_file_path = os.path.split(os.path.abspath(__file__))[0] + '/summaries' 
