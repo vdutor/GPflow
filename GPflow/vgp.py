@@ -103,17 +103,17 @@ class VGP(GPModel):
         I = tf.tile(tf.expand_dims(eye(self.num_data), 0), [self.num_latent, 1, 1])
         A = I + tf.expand_dims(tf.transpose(self.q_lambda), 1) * \
             tf.expand_dims(tf.transpose(self.q_lambda), 2) * K
-        L = tf.batch_cholesky(A)
-        Li = tf.batch_matrix_triangular_solve(L, I)
-        tmp = Li / tf.transpose(self.q_lambda)
+        L = tf.cholesky(A)
+        Li = tf.matrix_triangular_solve(L, I)
+        tmp = Li / tf.expand_dims(tf.transpose(self.q_lambda), 1)
         f_var = 1./tf.square(self.q_lambda) - tf.transpose(tf.reduce_sum(tf.square(tmp), 1))
 
         # some statistics about A are used in the KL
-        A_logdet = 2.0 * tf.reduce_sum(tf.log(tf.batch_matrix_diag_part(L)))
+        A_logdet = 2.0 * tf.reduce_sum(tf.log(tf.matrix_diag_part(L)))
         trAi = tf.reduce_sum(tf.square(Li))
 
-        KL = 0.5 * (A_logdet + trAi - self.num_data * self.num_latent
-                    + tf.reduce_sum(K_alpha*self.q_alpha))
+        KL = 0.5 * (A_logdet + trAi - self.num_data * self.num_latent +
+                    tf.reduce_sum(K_alpha*self.q_alpha))
 
         v_exp = self.likelihood.variational_expectations(f_mean, f_var, self.Y)
         return tf.reduce_sum(v_exp) - KL
@@ -140,10 +140,10 @@ class VGP(GPModel):
         f_mean = tf.matmul(tf.transpose(Kx), self.q_alpha) + self.mean_function(Xnew)
 
         # predictive var
-        A = K + tf.batch_matrix_diag(tf.transpose(1./tf.square(self.q_lambda)))
-        L = tf.batch_cholesky(A)
+        A = K + tf.matrix_diag(tf.transpose(1./tf.square(self.q_lambda)))
+        L = tf.cholesky(A)
         Kx_tiled = tf.tile(tf.expand_dims(Kx, 0), [self.num_latent, 1, 1])
-        LiKx = tf.batch_matrix_triangular_solve(L, Kx_tiled)
+        LiKx = tf.matrix_triangular_solve(L, Kx_tiled)
         if full_cov:
             f_var = self.kern.K(Xnew) - tf.batch_matmul(LiKx, LiKx, adj_x=True)
         else:
