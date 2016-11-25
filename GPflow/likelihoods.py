@@ -15,9 +15,9 @@
 
 from __future__ import absolute_import
 from . import densities, transforms
-from .param import Parameterized, Param
 import tensorflow as tf
 import numpy as np
+from .param import Parameterized, Param, ParamList
 from ._settings import settings
 float_type = settings.dtypes.float_type
 np_float_type = np.float32 if float_type is tf.float32 else np.float64
@@ -461,3 +461,134 @@ class MultiClass(Likelihood):
     def conditional_variance(self, F):
         p = self.conditional_mean(F)
         return p - tf.square(p)
+
+
+class SwitchedLikelihood(Likelihood):
+    def __init__(self, likelihood_list):
+        """
+        In this likelihood, we assume at extra column of Y, which contains
+        integers that specify a likelihood from the list of likelihoods.
+        """
+        Likelihood.__init__(self)
+        for l in likelihood_list:
+            assert isinstance(l, Likelihood)
+        self.likelihood_list = ParamList(likelihood_list)
+        self.num_likelihoods = len(self.likelihood_list)
+
+    def _partition_and_stitch(self, args, func_name):
+        """
+        args is a list of tensors, to be passed to self.likelihoods.<func_name>
+
+        args[-1] is the 'Y' argument, which contains the indexes to self.likelihoods.
+
+        This function splits up the args using dynamic_partition, calls the
+        relevant function on the likelihoods, and re-combines the result.
+        """
+        # get the index from Y
+        Y = args[-1]
+        ind = tf.gather(tf.transpose(Y), tf.shape(Y)[1]-1)  # ind = Y[:,-1]
+        ind = tf.cast(ind, tf.int32)
+        Y = tf.transpose(tf.gather(tf.transpose(Y), tf.range(0, tf.shape(Y)[1]-1)))  # Y = Y[:,:-1]
+        args[-1] = Y
+
+        # split up the arguments into chunks corresponding to the relevant likelihoods
+        args = zip(*[tf.dynamic_partition(X, ind, self.num_likelihoods) for X in args])
+
+        # apply the likelihood-function to each section of the data
+        funcs = [getattr(lik, func_name) for lik in self.likelihood_list]
+        results = [f(*args_i) for f, args_i in zip(funcs, args)]
+
+        # stitch the results back together
+        partitions = tf.dynamic_partition(tf.range(0, tf.size(ind)), ind, self.num_likelihoods)
+        results = tf.dynamic_stitch(partitions, results)
+
+        return results
+
+    def logp(self, F, Y):
+        return self._partition_and_stitch([F, Y], 'logp')
+
+    def predict_density(self, Fmu, Fvar, Y):
+        return self._partition_and_stitch([Fmu, Fvar, Y], 'predict_density')
+
+    def variational_expectations(self, Fmu, Fvar, Y):
+        return self._partition_and_stitch([Fmu, Fvar, Y], 'variational_expectations')
+
+    def predict_mean_and_var(self, Fmu, Fvar):
+        mu_list, var_list = zip(*[lik.predict_mean_and_var(Fmu, Fvar) for lik in self.likelihood_list])
+        mu = tf.concat(1, mu_list)
+        var = tf.concat(1, var_list)
+        return mu, var
+
+
+class Ordinal(Likelihood):
+    """
+    A likelihood for doing ordinal regression.
+
+    The data are integer values from 0 to K, and the user must specify (K-1)
+    'bin edges' which define the points at which the labels switch. Let the bin
+    edges be [a_0, a_1, ... a_{K-1}], then the likelihood is
+
+    p(Y=0|F) = phi((a_0 - F) / sigma)
+    p(Y=1|F) = phi((a_1 - F) / sigma) - phi((a_0 - F) / sigma)
+    p(Y=2|F) = phi((a_2 - F) / sigma) - phi((a_1 - F) / sigma)
+    ...
+    p(Y=K|F) = 1 - phi((a_{K-1} - F) / sigma)
+
+    where phi is the cumulative density function of a Gaussian (the probit
+    function) and sigma is a parameter to be learned. A reference is:
+
+    @article{chu2005gaussian,
+      title={Gaussian processes for ordinal regression},
+      author={Chu, Wei and Ghahramani, Zoubin},
+      journal={Journal of Machine Learning Research},
+      volume={6},
+      number={Jul},
+      pages={1019--1041},
+      year={2005}
+    }
+    """
+    def __init__(self, bin_edges):
+        """
+        bin_edges is a numpy array specifying at which function value the
+        output label should switch. In the possible Y values are 0...K, then
+        the size of bin_edges should be (K-1).
+        """
+        Likelihood.__init__(self)
+        self.bin_edges = bin_edges
+        self.num_bins = bin_edges.size + 1
+        self.sigma = Param(1.0, transforms.positive)
+
+    def logp(self, F, Y):
+        Y = tf.cast(Y, tf.int32)
+        scaled_bins_left = tf.concat(0, [self.bin_edges/self.sigma, np.array([np.inf])])
+        scaled_bins_right = tf.concat(0, [np.array([-np.inf]), self.bin_edges/self.sigma])
+        selected_bins_left = tf.gather(scaled_bins_left, Y)
+        selected_bins_right = tf.gather(scaled_bins_right, Y)
+
+        return tf.log(probit(selected_bins_left - F / self.sigma) -
+                      probit(selected_bins_right - F / self.sigma) + 1e-6)
+
+    def _make_phi(self, F):
+        """
+        A helper function for making predictions. Constructs a probability
+        matrix where each row output the probability of the corresponding
+        label, and the rows match the entries of F.
+
+        Note that a matrix of F values is flattened.
+        """
+        scaled_bins_left = tf.concat(0, [self.bin_edges/self.sigma, np.array([np.inf])])
+        scaled_bins_right = tf.concat(0, [np.array([-np.inf]), self.bin_edges/self.sigma])
+        return probit(scaled_bins_left - tf.reshape(F, (-1, 1)) / self.sigma)\
+            - probit(scaled_bins_right - tf.reshape(F, (-1, 1)) / self.sigma)
+
+    def conditional_mean(self, F):
+        phi = self._make_phi(F)
+        Ys = tf.reshape(np.arange(self.num_bins, dtype=np.float64), (-1, 1))
+        return tf.reshape(tf.matmul(phi, Ys), tf.shape(F))
+
+    def conditional_variance(self, F):
+        phi = self._make_phi(F)
+        Ys = tf.reshape(np.arange(self.num_bins, dtype=np.float64), (-1, 1))
+        E_y = tf.matmul(phi, Ys)
+        E_y2 = tf.matmul(phi, tf.square(Ys))
+        return tf.reshape(E_y2 - tf.square(E_y), tf.shape(F))

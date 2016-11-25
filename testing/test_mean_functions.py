@@ -204,5 +204,48 @@ class TestModelsWithMeanFuncs(unittest.TestCase):
             self.assertTrue(np.all(v1 == v2))
             self.assertFalse(np.all(mu1 == mu2))
 
+
+class TestSwitchedMeanFunction(unittest.TestCase):
+    """
+    Test for the SwitchedMeanFunction.
+    """
+    def setUp(self):
+        pass
+
+    def test(self):
+        rng = np.random.RandomState(0)
+        X = np.hstack([rng.randn(10, 3), 1.0*rng.randint(0, 2, 10).reshape(-1, 1)])
+        switched_mean = GPflow.mean_functions.SwitchedMeanFunction(
+                        [GPflow.mean_functions.Constant(np.zeros(1)),
+                         GPflow.mean_functions.Constant(np.ones(1))])
+
+        sess = tf.Session()
+        tf_array = switched_mean.get_free_state()
+        switched_mean.make_tf_array(tf_array)
+        sess.run(tf.initialize_all_variables())
+        fd = {}
+        switched_mean.update_feed_dict(switched_mean.get_feed_dict_keys(), fd)
+        with switched_mean.tf_mode():
+            result = sess.run(switched_mean(X), feed_dict=fd)
+
+        np_list = np.array([0., 1.])
+        result_ref = (np_list[X[:, 3].astype(np.int)]).reshape(-1, 1)
+        self.assertTrue(np.allclose(result, result_ref))
+
+
+class TestBug277Regression(unittest.TestCase):
+    """
+    See github issue #277. This is a regression test.
+    """
+    def setUp(self):
+        self.m1 = GPflow.mean_functions.Linear()
+        self.m2 = GPflow.mean_functions.Linear()
+
+    def test(self):
+        self.assertTrue(self.m1.b.value == self.m2.b.value)
+        self.m1.b = 1.
+        self.assertFalse(self.m1.b.value == self.m2.b.value)
+
+
 if __name__ == "__main__":
     unittest.main()
