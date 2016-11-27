@@ -228,7 +228,19 @@ class Model(Parameterized):
         try:
             iteration = 0
             while iteration < maxiter:
-                self._session.run(opt_step, feed_dict=feed_dict)
+                run_metadata = tf.RunMetadata()
+                self._session.run(opt_step, 
+                                  feed_dict=feed_dict,
+                                  options=tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE),
+                                  run_metadata=run_metadata)
+
+                # Create the Timeline object, and write it to a json
+                from tensorflow.python.client import timeline
+                tl = timeline.Timeline(run_metadata.step_stats)
+                ctf = tl.generate_chrome_trace_format()
+                with open('timeline.json', 'w') as f:
+                    f.write(ctf)
+
                 if callback is not None:
                     callback(self._session.run(self._free_vars))
                 iteration += 1
