@@ -87,7 +87,10 @@ class HiddenLayer(Layer):
         # distribution to feed forward to downstream layers
         psi1Kmmi = tf.transpose(cho_solve(Lmm, tf.transpose(psi1)))
         forward_mean = tf.matmul(psi1Kmmi, self.q_mu)
-        tmp = tf.einsum('ij,kjl->ikl', psi1Kmmi, q_chol)
+        #tmp = tf.expand_dims(psi1Kmmi,0)
+        tmp = tf.transpose(tf.matmul(tf.tile(tf.expand_dims(psi1Kmmi, 0), [tf.shape(q_chol)[0], 1, 1]), q_chol), perm=[1, 0, 2])
+        #tmp = tf.transpose(tf.matmul(psi1Kmmi, q_chol), perm=[1, 0, 2])
+        #tmp = tf.einsum('ij,kjl->ikl', psi1Kmmi, q_chol) # output[i,k,l] = sum_j psi1Kmmi[i,j] * q_chol[k, j, l]
         forward_var = tf.reduce_sum(tf.square(tmp), 2) + 1./self.beta
 
         # complete the square term
@@ -158,6 +161,19 @@ class ObservedLayer(Layer):
         self._log_marginal_contribution += -0.5 * self.beta * (np.sum(np.square(self.Y)) -
                                                                2.*tf.reduce_sum(self.Y*proj_mean))
 
+    def build_predict(self, X_in_mean, X_in_var):
+        psi1 = self.kern.eKxz(self.Z, X_in_mean, X_in_var)
+        Kmm = self.kern.K(self.Z) + np.eye(self.num_inducing) * 1e-6
+        Lmm = tf.cholesky(Kmm)
+        q_chol = tf.matrix_band_part(tf.transpose(self.q_sqrt, (2, 0, 1)), -1, 0)  # force lower triangle
+        psi1Kmmi = tf.transpose(cho_solve(Lmm, tf.transpose(psi1)))
+        forward_mean = tf.matmul(psi1Kmmi, self.q_mu)
+        tmp = tf.transpose(tf.matmul(tf.tile(tf.expand_dims(psi1Kmmi, 0), [tf.shape(q_chol)[0], 1, 1]), q_chol),
+                           perm=[1, 0, 2])
+        forward_var = tf.reduce_sum(tf.square(tmp), 2) + 1. / self.beta
+
+        return forward_mean, forward_var
+
     def build_posterior_samples(self, Xtest, full_cov=False):
         """
         in the special case of the last layer, don't add noise to the predicted
@@ -223,6 +239,13 @@ class ColDeep(GPflow.model.Model):
         self.layers[-1].feed_forward(mu, var)
         return reduce(tf.add, [l._log_marginal_contribution for l in self.layers])
 
+    @GPflow.model.AutoFlow((tf.float64,[None, None]))
+    def predict_f(self, Xnew):
+        mu, var = self.layers[0].build_predict(Xnew)
+        for l in self.layers[1:-1]:
+            mu, var = l.feed_forward(mu, var)
+        return self.layers[-1].build_predict(mu, var)
+
     @GPflow.model.AutoFlow((tf.float64,))
     def predict_sampling(self, Xtest):
         for l in self.layers:
@@ -261,18 +284,30 @@ def plot(m):
         plt.errorbar(Z.flatten(), mu.flatten(), yerr=2*np.sqrt(var).flatten(),
                      capsize=0, elinewidth=1.5, ecolor='r', linewidth=0)
 
+def plot2(m):
+    # plot model fit
+    plt.figure()
+    extra = (X.max() - X.min()) * 1.0
+    Xtest = np.linspace(X.min() - extra, X.max() + extra, 300)[:, None]
+    Ymu, Yvar = m.predict_f(Xtest)
+    plt.plot(Xtest, Ymu, 'r', lw=1.5)
+    plt.plot(Xtest, Ymu - 2 * np.sqrt(Yvar), 'r--')
+    plt.plot(Xtest, Ymu + 2 * np.sqrt(Yvar), 'r--')
+    plt.plot(X, Y, 'kx', mew=1.5, ms=8)
+
 if __name__ == "__main__":
     from matplotlib import pyplot as plt
-    X = np.linspace(-3, 3, 100)[:, None]
-    Y = np.where(X < 0, -1, 1) + np.random.randn(100, 1) * 0.01
-    m = ColDeep(X, Y, (1, 1, 1), (15, 15, 15, 15))
+    X = np.linspace(-3, 3, 20)[:, None]
+    Y = np.where(X < 0, -1, 1) + np.random.randn(20, 1) * 0.01
+    m = ColDeep(X, Y, (1,1,1), (15, 15,15,15))
     for l in m.layers:
-        l.Z.fixed = True
-        l.kern.fixed = True
-        l.kern.lengthscales = 2.5
-        l.beta.fixed = True
+        l.Z.fixed = False
+        l.kern.fixed = False
+        #l.kern.lengthscales = 2.5
+        l.beta.fixed = False
         l.q_mu = np.random.randn(*l.q_mu.shape)
     m.layers[0].kern.lengthscales = 5.
     m.optimize(maxiter=5000, disp=1)
 
-    plot(m)
+    plot2(m)
+    plt.show()
