@@ -67,17 +67,19 @@ class HiddenLayer(Layer):
 
         # kernel computations
         psi0 = tf.reduce_sum(self.kern.eKdiag(X_in_mean, X_in_var))
-        psi1 = self.kern.eKxz(self.Z, X_in_mean, X_in_var)
-        psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_in_mean, tf.matrix_diag(X_in_var)), 0)
+        psi1 = self.kern.eKxz(self.Z, X_in_mean, X_in_var) # N x M
+        psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_in_mean, tf.matrix_diag(X_in_var)), 0) # M x M
 
-        Kmm = self.kern.K(self.Z) + np.eye(self.num_inducing)*1e-6
-        Lmm = tf.cholesky(Kmm)
+        Kmm = self.kern.K(self.Z) + np.eye(self.num_inducing)*1e-6 # M x M
+        Lmm = tf.cholesky(Kmm) # M x M
 
         # useful computations
-        KmmiPsi2 = cho_solve(Lmm, psi2)
-        q_chol = tf.matrix_band_part(tf.transpose(self.q_sqrt, (2, 0, 1)), -1, 0)  # force lower triangle
-        q_cov = tf.batch_matmul(q_chol, tf.transpose(q_chol, perm=[0, 2, 1]))  # D x M x M
-        uuT = tf.matmul(self.q_mu, tf.transpose(self.q_mu)) + tf.reduce_sum(q_cov, 0)
+        KmmiPsi2 = cho_solve(Lmm, psi2) # M x M
+        # = chol of latent variances (M x M x D),
+        # D x M x M
+        q_chol = tf.matrix_band_part(tf.transpose(self.q_sqrt, (2, 0, 1)), -1, 0) # D x M x M
+        q_cov = tf.matmul(q_chol, tf.transpose(q_chol, perm=[0, 2, 1]))  # D x M x M
+        uuT = tf.matmul(self.q_mu, tf.transpose(self.q_mu)) + tf.reduce_sum(q_cov, 0) # M x M
 
         # trace term, KL
         trace = psi0 - tf.reduce_sum(tf.diag_part(KmmiPsi2))
@@ -85,16 +87,15 @@ class HiddenLayer(Layer):
         self._log_marginal_contribution -= self.build_kl(Kmm)
 
         # distribution to feed forward to downstream layers
-        psi1Kmmi = tf.transpose(cho_solve(Lmm, tf.transpose(psi1)))
-        forward_mean = tf.matmul(psi1Kmmi, self.q_mu)
-        #tmp = tf.expand_dims(psi1Kmmi,0)
-        tmp = tf.transpose(tf.matmul(tf.tile(tf.expand_dims(psi1Kmmi, 0), [tf.shape(q_chol)[0], 1, 1]), q_chol), perm=[1, 0, 2])
-        #tmp = tf.transpose(tf.matmul(psi1Kmmi, q_chol), perm=[1, 0, 2])
-        #tmp = tf.einsum('ij,kjl->ikl', psi1Kmmi, q_chol) # output[i,k,l] = sum_j psi1Kmmi[i,j] * q_chol[k, j, l]
-        forward_var = tf.reduce_sum(tf.square(tmp), 2) + 1./self.beta
+        psi1Kmmi = tf.transpose(cho_solve(Lmm, tf.transpose(psi1))) # N x M
+        forward_mean = tf.matmul(psi1Kmmi, self.q_mu) # N x D
+        # Here: D x N x M MULT D X M X M
+        tmp = tf.transpose(tf.matmul(tf.tile(tf.expand_dims(psi1Kmmi, 0), [tf.shape(q_chol)[0], 1, 1]), q_chol), perm=[1, 0, 2]) # N x D x M
+        #forward_var = tf.reduce_sum(tf.square(tmp), 2) + 1./self.beta # N x
+        forward_var = tf.matmul(tmp, tf.transpose(tmp, perm=[0,2,1])) + eye(tf.shape(q_chol)[0]) / self.beta  # N x D x D
 
         # complete the square term
-        KmmiPsi2Kmmi = cho_solve(Lmm, tf.transpose(KmmiPsi2))
+        KmmiPsi2Kmmi = cho_solve(Lmm, tf.transpose(KmmiPsi2)) #
         tmp = KmmiPsi2Kmmi - tf.matmul(tf.transpose(psi1Kmmi), psi1Kmmi)
         self._log_marginal_contribution += -0.5 * self.beta * tf.reduce_sum(tmp * uuT)
 
@@ -133,12 +134,13 @@ class ObservedLayer(Layer):
     def feed_forward(self, X_in_mean, X_in_var):
         # kernel computations
         psi0 = tf.reduce_sum(self.kern.eKdiag(X_in_mean, X_in_var))
-        psi1 = self.kern.eKxz(self.Z, X_in_mean, X_in_var)
-        psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_in_mean, tf.matrix_diag(X_in_var)), 0)
+        psi1 = self.kern.eKxz(self.Z, X_in_mean, X_in_var) # N x M
+        psi2 = tf.reduce_sum(self.kern.eKzxKxz(self.Z, X_in_mean, tf.matrix_diag(X_in_var)), 0) # M x M
+
         Kmm = self.kern.K(self.Z) + eye(self.num_inducing)*1e-6
         Lmm = tf.cholesky(Kmm)
         q_chol = tf.matrix_band_part(tf.transpose(self.q_sqrt, (2, 0, 1)), -1, 0)  # force lower triangle
-        q_cov = tf.batch_matmul(q_chol, tf.transpose(q_chol, perm=[0, 2, 1]))  # D x M x M
+        q_cov = tf.matmul(q_chol, tf.transpose(q_chol, perm=[0, 2, 1]))  # D x M x M
         uuT = tf.matmul(self.q_mu, tf.transpose(self.q_mu)) + tf.reduce_sum(q_cov, 0)
 
         # trace term
@@ -161,7 +163,7 @@ class ObservedLayer(Layer):
         self._log_marginal_contribution += -0.5 * self.beta * (np.sum(np.square(self.Y)) -
                                                                2.*tf.reduce_sum(self.Y*proj_mean))
 
-    def build_predict(self, X_in_mean, X_in_var):
+    def build_predict_uncertain(self, X_in_mean, X_in_var):
         psi1 = self.kern.eKxz(self.Z, X_in_mean, X_in_var)
         Kmm = self.kern.K(self.Z) + np.eye(self.num_inducing) * 1e-6
         Lmm = tf.cholesky(Kmm)
@@ -241,10 +243,10 @@ class ColDeep(GPflow.model.Model):
 
     @GPflow.model.AutoFlow((tf.float64,[None, None]))
     def predict_f(self, Xnew):
-        mu, var = self.layers[0].build_predict(Xnew)
+        mu, var = self.layers[0].build_predict(Xnew, full_cov=True)
         for l in self.layers[1:-1]:
             mu, var = l.feed_forward(mu, var)
-        return self.layers[-1].build_predict(mu, var)
+        return self.layers[-1].build_predict_uncertain(mu, var)
 
     @GPflow.model.AutoFlow((tf.float64,))
     def predict_sampling(self, Xtest):
@@ -297,8 +299,8 @@ def plot2(m):
 
 if __name__ == "__main__":
     from matplotlib import pyplot as plt
-    X = np.linspace(-3, 3, 20)[:, None]
-    Y = np.where(X < 0, -1, 1) + np.random.randn(20, 1) * 0.01
+    X = np.linspace(-3, 3, 100)[:, None]
+    Y = np.where(X < 0, -1, 1) + np.random.randn(100, 1) * 0.01
     m = ColDeep(X, Y, (1,1,1), (15, 15,15,15))
     for l in m.layers:
         l.Z.fixed = False
@@ -309,5 +311,6 @@ if __name__ == "__main__":
     m.layers[0].kern.lengthscales = 5.
     m.optimize(maxiter=5000, disp=1)
 
+    plot(m)
     plot2(m)
     plt.show()
