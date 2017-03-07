@@ -96,8 +96,7 @@ class HiddenLayer(Layer):
         psi1Kmmi = tf.transpose(cho_solve(Lmm, tf.transpose(psi1))) # N x M
         forward_mean = tf.matmul(psi1Kmmi, self.q_mu) # N x D
         # Here: D x N x M MULT D X M X M
-        tmp = tf.transpose(tf.matmul(tf.tile(tf.expand_dims(psi1Kmmi, 0), [tf.shape(q_chol)[0], 1, 1]), q_chol), perm=[1, 0, 2]) # N x D x M
-        #forward_var = tf.reduce_sum(tf.square(tmp), 2) + 1./self.beta # N x
+        tmp = tf.einsum('ij,kjl->ikl', psi1Kmmi, q_chol) # N x D x M
         forward_var = tf.matmul(tmp, tf.transpose(tmp, perm=[0,2,1])) + eye(tf.shape(q_chol)[0]) / self.beta  # N x D x D
 
         # complete the square term
@@ -176,8 +175,7 @@ class ObservedLayer(Layer):
         q_chol = tf.matrix_band_part(tf.transpose(self.q_sqrt, (2, 0, 1)), -1, 0)  # force lower triangle
         psi1Kmmi = tf.transpose(cho_solve(Lmm, tf.transpose(psi1)))
         forward_mean = tf.matmul(psi1Kmmi, self.q_mu)
-        tmp = tf.transpose(tf.matmul(tf.tile(tf.expand_dims(psi1Kmmi, 0), [tf.shape(q_chol)[0], 1, 1]), q_chol),
-                           perm=[1, 0, 2])
+        tmp = tf.einsum('ij,kjl->ikl', psi1Kmmi, q_chol)  # N x D x M
         forward_var = tf.reduce_sum(tf.square(tmp), 2) + 1. / self.beta
         return forward_mean, forward_var
 
