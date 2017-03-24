@@ -357,6 +357,76 @@ class RBF(Stationary):
             X, X2 = self._slice(X, X2)
         return self.variance * tf.exp(-self.square_dist(X, X2) / 2)
 
+class SM(Kern):
+    """
+    Implementation of the Spectral Mixture kernel
+
+    Key reference:
+        Generalized Spectral Kernels
+        Samo Kom, Y.L. and Roberts J.S.
+        9 Oct. 2015
+
+    Math:
+        sum( sigma_k * exp(-2 * pi^2 || tau (*) gamma_k ||^2) * cos(2 * pi * omega_k^T tau), k = 1 .. K),
+        with tau (*) gamma_k the Hadamard (also known as entrywise) product between the vectors tau and gamme_k
+
+    """
+
+    def __init__(self, input_dim, K=1, variances=1.0, lengthscales_exp=1.0, lengthscales_per=1.0, active_dims=None, ARD=False):
+        """
+        - input_dim: dimension of the inputs (abbreviated by p)
+        - K: amount of spectral mixtures
+        - variances: K x 1 vector (sigma_k's)
+        - lengthscales_exp: K x p matrix when ARD=True and a scalar when ARD=False (gamma_k's)
+        - lengthscales_per: K x p matrix (omega_k's)
+
+        """
+        Kern.__init__(self, input_dim, active_dims)
+        self.ARD = ARD
+        self.K = K
+
+        if variances is not np.array:
+            variances = variances * np.ones(K)
+
+        if ARD:
+            if lengthscales_exp is not np.array:
+                lengthscales_exp = np.ones((K,input_dim)) * lengthscales_exp
+            if lengthscales_per is not np.array:
+                lengthscales_per = np.ones((K,input_dim)) * lengthscales_per
+        else:
+            if lengthscales_exp is not np.array:
+                lengthscales_exp = np.ones(K) * lengthscales_exp
+            if lengthscales_per is not np.array:
+                lengthscales_per = np.ones(K) * lengthscales_exp
+
+        self.variances = Param(variances, transforms.positive)
+        self.lengthscales_exp = Param(lengthscales_exp, transforms.positive)
+        self.lengthscales_per = Param(lengthscales_per, transforms.positive)
+
+        self.parameters = [self.variances, self.lengthscales_exp, self.lengthscales_per]
+        self.scoped_keys.extend(['_tau'])
+
+
+    def K(self,X,X2=None, presliced=False):
+        if not presliced:
+            X, X2 = self._slice(X, X2)
+
+        X2 = X if X2 is None else X2
+        tau = self._tau(X, X2)
+        K_tau = tf.tile(tf.expand_dims(tau, 2), [1,1,self.K,1])
+
+        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * self.lengthscales_per, axis=-1))
+        exp = tf.exp(tf.reduce_sum(-2 * np.pi**2 * tf.square(K_tau * self.lengthscales_exp), axis=-1))
+        return tf.reduce_sum(tf.square(self.variances) * exp * cos, axis=-1)
+
+
+    def _tau(self, X, X2):
+        N, M = tf.shape(X)[0], tf.shape(X2)[0]
+        X = tf.tile(tf.expand_dims(X, 1), [1, M, 1])
+        X2 = tf.tile(tf.expand_dims(X2, 1), [1, N, 1])
+        X2 = tf.transpose(X2, perm=[1, 0, 2])
+        return tf.subtract(X,X2)
+
 
 class Linear(Kern):
     """
