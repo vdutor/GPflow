@@ -372,7 +372,7 @@ class SM(Kern):
 
     """
 
-    def __init__(self, input_dim, K=1, variances=1.0, lengthscales_exp=1.0, lengthscales_per=1.0, active_dims=None, ARD=False):
+    def __init__(self, input_dim, k=1, variances=1.0, lengthscales_exp=1.0, lengthscales_per=1.0, active_dims=None, ARD=False):
         """
         - input_dim: dimension of the inputs (abbreviated by p)
         - K: amount of spectral mixtures
@@ -383,28 +383,28 @@ class SM(Kern):
         """
         Kern.__init__(self, input_dim, active_dims)
         self.ARD = ARD
-        self.K = K
+        self.k = k
 
         if variances is not np.array:
-            variances = variances * np.ones(K)
+            variances = variances * np.random.rand(k)
 
         if ARD:
             if lengthscales_exp is not np.array:
-                lengthscales_exp = np.ones((K,input_dim)) * lengthscales_exp
+                lengthscales_exp = np.random.rand(k,input_dim) * lengthscales_exp
             if lengthscales_per is not np.array:
-                lengthscales_per = np.ones((K,input_dim)) * lengthscales_per
+                lengthscales_per = np.random.rand(k,input_dim) * lengthscales_per
         else:
             if lengthscales_exp is not np.array:
-                lengthscales_exp = np.ones(K) * lengthscales_exp
+                lengthscales_exp = np.ones(k) * lengthscales_exp
             if lengthscales_per is not np.array:
-                lengthscales_per = np.ones(K) * lengthscales_exp
+                lengthscales_per = np.ones(k) * lengthscales_exp
 
         self.variances = Param(variances, transforms.positive)
         self.lengthscales_exp = Param(lengthscales_exp, transforms.positive)
         self.lengthscales_per = Param(lengthscales_per, transforms.positive)
 
         self.parameters = [self.variances, self.lengthscales_exp, self.lengthscales_per]
-        self.scoped_keys.extend(['_tau'])
+        # self.scoped_keys.extend(['_tau'])
 
 
     def K(self,X,X2=None, presliced=False):
@@ -413,11 +413,17 @@ class SM(Kern):
 
         X2 = X if X2 is None else X2
         tau = self._tau(X, X2)
-        K_tau = tf.tile(tf.expand_dims(tau, 2), [1,1,self.K,1])
+        K_tau = tf.tile(tf.expand_dims(tau, 2), [1,1,self.k,1])
 
-        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * self.lengthscales_per, axis=-1))
-        exp = tf.exp(tf.reduce_sum(-2 * np.pi**2 * tf.square(K_tau * self.lengthscales_exp), axis=-1))
+        length_exp = self.lengthscales_exp if self.ARD else tf.tile(tf.expand_dims(self.lengthscales_exp, 1), [1, self.input_dim])
+        length_per = self.lengthscales_per if self.ARD else tf.tile(tf.expand_dims(self.lengthscales_per, 1), [1, self.input_dim])
+        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * length_per, axis=-1))
+        exp = tf.exp(tf.reduce_sum(-2 * np.pi**2 * tf.square(K_tau * length_exp), axis=-1))
         return tf.reduce_sum(tf.square(self.variances) * exp * cos, axis=-1)
+
+
+    def Kdiag(self, X, presliced=False):
+        return tf.fill(tf.stack([tf.shape(X)[0]]), tf.reduce_sum(tf.square(self.variances)))
 
 
     def _tau(self, X, X2):
