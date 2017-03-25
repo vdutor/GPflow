@@ -357,6 +357,79 @@ class RBF(Stationary):
             X, X2 = self._slice(X, X2)
         return self.variance * tf.exp(-self.square_dist(X, X2) / 2)
 
+class SM2(Kern):
+    """
+
+    Key reference:
+        Fast Kernel Learning for Multidimensional Pattern Extrapolation
+        Andrew Gordon Wilson and Elad Gilboa
+
+    Math:
+        TODO
+    """
+
+    def __init__(self, input_dim, k=1, variances=1.0, lengthscales_exp=1.0, lengthscales_per=1.0, active_dims=None, ARD=False):
+        """
+        - input_dim: dimension of the inputs (abbreviated by p)
+        - K: amount of spectral mixtures
+        - variances: K x 1 vector (sigma_k's)
+        - lengthscales_exp: K x p matrix when ARD=True and a scalar when ARD=False (gamma_k's)
+        - lengthscales_per: K x p matrix (omega_k's)
+
+        """
+        Kern.__init__(self, input_dim, active_dims)
+        self.ARD = ARD
+        self.k = k
+
+        if variances is not np.array:
+            variances = variances * np.random.rand(k)
+
+        if ARD:
+            if lengthscales_exp is not np.array:
+                lengthscales_exp = np.random.rand(input_dim,k) * lengthscales_exp
+            if lengthscales_per is not np.array:
+                lengthscales_per = np.random.rand(input_dim,k) * lengthscales_per
+        else:
+            if lengthscales_exp is not np.array:
+                lengthscales_exp = np.ones(k) * lengthscales_exp
+            if lengthscales_per is not np.array:
+                lengthscales_per = np.ones(k) * lengthscales_exp
+
+        self.variances = Param(variances, transforms.positive)
+        self.lengthscales_exp = Param(lengthscales_exp, transforms.positive)
+        self.lengthscales_per = Param(lengthscales_per, transforms.positive)
+
+        self.parameters = [self.variances, self.lengthscales_exp, self.lengthscales_per]
+        # self.scoped_keys.extend(['_tau'])
+
+
+    def K(self,X,X2=None, presliced=False):
+        if not presliced:
+            X, X2 = self._slice(X, X2)
+
+        X2 = X if X2 is None else X2
+        tau = self._tau(X, X2)
+        K_tau = tf.tile(tf.expand_dims(tau, 3), [1,1,1, self.k])
+
+        # length_exp = self.lengthscales_exp if self.ARD else tf.tile(tf.expand_dims(self.lengthscales_exp, 1), [1, self.input_dim])
+        # length_per = self.lengthscales_per if self.ARD else tf.tile(tf.expand_dims(self.lengthscales_per, 1), [1, self.input_dim])
+        cos = tf.cos(2 * np.pi * K_tau * self.lengthscales_per)
+        exp = tf.exp(-2 * np.pi**2 * tf.square(K_tau * self.lengthscales_exp))
+        return tf.reduce_prod(tf.reduce_sum(tf.square(self.variances) * cos * exp, axis=3), axis=2)
+        # return tf.reduce_sum(tf.square(self.variances) * exp * cos, axis=-1)
+
+
+    def Kdiag(self, X, presliced=False):
+        return tf.fill(tf.stack([tf.shape(X)[0]]), tf.squeeze(tf.reduce_sum(tf.square(self.variances))**self.input_dim))
+
+
+    def _tau(self, X, X2):
+        N, M = tf.shape(X)[0], tf.shape(X2)[0]
+        X = tf.tile(tf.expand_dims(X, 1), [1, M, 1])
+        X2 = tf.tile(tf.expand_dims(X2, 1), [1, N, 1])
+        X2 = tf.transpose(X2, perm=[1, 0, 2])
+        return tf.subtract(X,X2)
+
 class SM(Kern):
     """
     Implementation of the Spectral Mixture kernel

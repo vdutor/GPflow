@@ -1,1 +1,0 @@
-/home/vincent/thesis/sm/main.py
