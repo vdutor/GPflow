@@ -368,7 +368,7 @@ class SM2(Kern):
         TODO
     """
 
-    def __init__(self, input_dim, k=1, variances=1.0, lengthscales_exp=1.0, lengthscales_per=1.0, active_dims=None, ARD=False):
+    def __init__(self, input_dim, k=1, variances=1.0, lengthscales_exp=10.0, lengthscales_per=10.0, active_dims=None, ARD=False):
         """
         - input_dim: dimension of the inputs (abbreviated by p)
         - K: amount of spectral mixtures
@@ -382,7 +382,7 @@ class SM2(Kern):
         self.k = k
 
         if variances is not np.array:
-            variances = variances * np.random.rand(k)
+            variances = variances * np.ones(k) * 1./self.k
 
         if ARD:
             if lengthscales_exp is not np.array:
@@ -399,7 +399,7 @@ class SM2(Kern):
         self.lengthscales_exp = Param(lengthscales_exp, transforms.positive)
         self.lengthscales_per = Param(lengthscales_per, transforms.positive)
 
-        self.parameters = [self.variances, self.lengthscales_exp, self.lengthscales_per]
+        # self.parameters = [self.variances, self.lengthscales_exp, self.lengthscales_per]
         # self.scoped_keys.extend(['_tau'])
 
 
@@ -445,7 +445,7 @@ class SM(Kern):
 
     """
 
-    def __init__(self, input_dim, k=1, variances=1.0, lengthscales_exp=1.0, lengthscales_per=1.0, active_dims=None, ARD=False):
+    def __init__(self, input_dim, k=1, variances=1.0, lengthscales_exp=10.0, lengthscales_per=10.0, active_dims=None, ARD=False):
         """
         - input_dim: dimension of the inputs (abbreviated by p)
         - K: amount of spectral mixtures
