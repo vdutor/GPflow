@@ -357,6 +357,68 @@ class RBF(Stationary):
             X, X2 = self._slice(X, X2)
         return self.variance * tf.exp(-self.square_dist(X, X2) / 2)
 
+class SM3(Kern):
+    """
+
+    Key reference:
+        Gaussian Process Kernels for Pattern Discovery and Extrapolation
+        Andrew Gordon Wilson and Ryan Adams
+
+    Math:
+        TODO
+    """
+
+    def __init__(self, input_dim, k=1, variances=1.0, lengthscales_exp=10.0, lengthscales_per=10.0, active_dims=None):
+        """
+        - input_dim: dimension of the inputs (abbreviated by p)
+        - K: amount of spectral mixtures
+        - variances: K x 1 vector (sigma_k's)
+        - lengthscales_exp: K x p matrix when ARD=True and a scalar when ARD=False (gamma_k's)
+        - lengthscales_per: K x p matrix (omega_k's)
+
+        """
+        Kern.__init__(self, input_dim, active_dims)
+        self.k = k
+
+        if variances is not np.array:
+            variances = variances * np.ones(k)
+        if lengthscales_exp is not np.array:
+            lengthscales_exp = np.ones((k,input_dim)) * lengthscales_exp
+        if lengthscales_per is not np.array:
+            lengthscales_per = np.random.rand(k,input_dim) * lengthscales_per
+
+        self.variances = Param(variances, transforms.positive)
+        self.lengthscales_exp = Param(lengthscales_exp, transforms.positive)
+        self.lengthscales_per = Param(lengthscales_per, transforms.positive)
+
+        # self.parameters = [self.variances, self.lengthscales_exp, self.lengthscales_per]
+        # self.scoped_keys.extend(['_tau'])
+
+
+    def K(self,X,X2=None, presliced=False):
+        if not presliced:
+            X, X2 = self._slice(X, X2)
+
+        X2 = X if X2 is None else X2
+        tau = self._tau(X, X2)
+        K_tau = tf.tile(tf.expand_dims(tau, 2), [1,1,self.k,1])
+
+        cos = tf.cos(2 * np.pi * K_tau * self.lengthscales_per)
+        exp = tf.exp(-2 * np.pi**2 * tf.square(K_tau) * self.lengthscales_exp)
+        return tf.reduce_sum(self.variances * tf.reduce_prod(cos * exp, axis=3), axis=2)
+
+
+    def Kdiag(self, X, presliced=False):
+        return tf.fill(tf.stack([tf.shape(X)[0]]), tf.squeeze(tf.reduce_sum(self.variances)))
+
+
+    def _tau(self, X, X2):
+        N, M = tf.shape(X)[0], tf.shape(X2)[0]
+        X = tf.tile(tf.expand_dims(X, 1), [1, M, 1])
+        X2 = tf.tile(tf.expand_dims(X2, 1), [1, N, 1])
+        X2 = tf.transpose(X2, perm=[1, 0, 2])
+        return tf.subtract(X,X2)
+
 class SM2(Kern):
     """
 
