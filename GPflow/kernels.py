@@ -358,6 +358,64 @@ class RBF(Stationary):
         return self.variance * tf.exp(-self.square_dist(X, X2) / 2)
 
 
+
+class SM(Kern):
+    """
+    Implementation of the Spectral Mixture kernel
+
+    Key reference:
+        Correction to Spectral Mixture (SM) Kernel Derivation for Multidimensional Inputs (Equation 5)
+        Andrew Gordon Wilson
+        May 15, 2015
+
+    """
+
+    def __init__(self, input_dim, Q, weights, frequencies, lengthscales, active_dims=None):
+        """
+        - input_dim: dimension of the inputs (abbreviated by p)
+        - K: amount of spectral mixtures
+        - variances: K x 1 vector (sigma_k's)
+        - lengthscales_exp: K x p matrix
+        - lengthscales_per: K x p matrix (omega_k's)
+
+        """
+        Kern.__init__(self, input_dim, active_dims)
+        assert len(weights.shape) == 1 and len(weights) == Q
+        assert lengthscales.shape == (Q,input_dim)
+        assert frequencies.shape == (Q,input_dim)
+        self.Q = Q
+        self.weights = Param(weights, transforms.positive)
+        self.frequencies = Param(frequencies, transforms.positive)
+        self.lengthscales = Param(lengthscales, transforms.positive)
+
+        self.parameters = [self.weights, self.lengthscales, self.frequencies]
+
+
+    def K(self,X,X2=None, presliced=False):
+        if not presliced:
+            X, X2 = self._slice(X, X2)
+
+        X2 = X if X2 is None else X2
+        tau = self._tau(X, X2)
+        K_tau = tf.tile(tf.expand_dims(tau, 2), [1,1,self.Q,1])
+
+        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * self.frequencies, axis=3))
+        exp = tf.reduce_prod(tf.exp(-2 * np.pi**2 * tf.square(K_tau * self.lengthscales)), axis=3)
+        return tf.reduce_sum(self.weights * exp * cos, axis=2)
+
+
+    def Kdiag(self, X, presliced=False):
+        return tf.fill(tf.stack([tf.shape(X)[0]]), tf.reduce_sum(self.weights))
+
+
+    def _tau(self, X, X2):
+        N, M = tf.shape(X)[0], tf.shape(X2)[0]
+        X = tf.tile(tf.expand_dims(X, 1), [1, M, 1])
+        X2 = tf.tile(tf.expand_dims(X2, 1), [1, N, 1])
+        X2 = tf.transpose(X2, perm=[1, 0, 2])
+        return tf.subtract(X,X2)
+
+
 class Linear(Kern):
     """
     The linear kernel

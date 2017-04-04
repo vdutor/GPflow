@@ -113,7 +113,7 @@ def build_psi_stats_linear(Z, kern, mu, S):
     Zv = kern.variance * Z
     psi1 = tf.matmul(mu, tf.transpose(Zv))
     psi2 = tf.matmul(tf.reduce_sum(S, 0) * Zv, tf.transpose(Zv)) + tf.matmul(tf.transpose(psi1), psi1)
-    
+
     return psi0, psi1, psi2
 
 

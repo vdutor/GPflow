@@ -74,11 +74,12 @@ class BayesianGPLVM(GPModel):
         GPModel.__init__(self, X_mean, Y, kern, likelihood=likelihoods.Gaussian(), mean_function=Zero())
         del self.X  # in GPLVM this is a Param
         self.X_mean = Param(X_mean)
-        # diag_transform = transforms.DiagMatrix(X_var.shape[1])
-        # self.X_var = Param(diag_transform.forward(transforms.positive.backward(X_var)) if X_var.ndim == 2 else X_var,
-        #                    diag_transform)
-        assert X_var.ndim == 2
-        self.X_var = Param(X_var, transforms.positive)
+        print X_var.ndim
+        diag_transform = transforms.DiagMatrix(X_var.shape[1])
+        self.X_var = Param(diag_transform.forward(transforms.positive.backward(X_var)) if X_var.ndim == 2 else X_var,
+                           diag_transform)
+        # assert X_var.ndim == 2
+        # self.X_var = Param(X_var, transforms.positive)
         self.num_data = X_mean.shape[0]
         self.output_dim = Y.shape[1]
 
