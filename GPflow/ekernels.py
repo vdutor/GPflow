@@ -93,35 +93,35 @@ class SM(kernels.SM):
         Sigma_q_det_cross = _prod(Sigma_q_det, Sigma_q_det) # Q Q
         weights_cross = _prod(weights, weights) # Q Q
         C = weights_cross * tf.sqrt(Sigma_q_det_cross) * (2*nppi)**P # Q Q
-        C = expand_and_tile(expand_and_tile(expand_and_tile(C, 3, 0, M), 4, 0, M), 5, 0, N) # N M M Q Q
+        C = _expand_and_tile(_expand_and_tile(_expand_and_tile(C, 3, 0, M), 4, 0, M), 5, 0, N) # N M M Q Q
 
 
         # c1
-        c1_var = expand_and_tile(expand_and_tile(_sum(Sigma_q, Sigma_q), 5, 0, M), 6, 0, M) # M M Q Q P P
-        tau = tf.expand_dims(expand_and_tile(expand_and_tile(_subs(Z,Z), 4, 2, Q), 5, 2, Q), -1) # M M Q Q P 1
+        c1_var = _expand_and_tile(_expand_and_tile(_sum(Sigma_q, Sigma_q), 5, 0, M), 6, 0, M) # M M Q Q P P
+        tau = tf.expand_dims(_expand_and_tile(_expand_and_tile(_subs(Z,Z), 4, 2, Q), 5, 2, Q), -1) # M M Q Q P 1
         tau_T = tf.transpose(tau, perm=[0, 1, 2, 3, 5, 4]) # M M Q Q 1 P
         c1_fac = 1./tf.sqrt(tf.matrix_determinant(c1_var)) * (2 * nppi)**(-P/2.) # M M Q Q
         c1_exp = tf.exp(-.5 * (tf.matmul(tau_T, tf.matmul(tf.matrix_inverse(c1_var), tau)))) # M M Q Q 1 1
-        c1 = expand_and_tile(c1_fac * tf.squeeze(c1_exp, axis=[4,5]), 5, 0, N) # N M M Q Q
+        c1 = _expand_and_tile(c1_fac * tf.squeeze(c1_exp, axis=[4,5]), 5, 0, N) # N M M Q Q
 
         # V1
         Sigma_q_inv = (4 * nppi**2) * tf.matrix_diag(lengthscales) # Q P P
         V1 = tf.matrix_inverse(_sum(Sigma_q_inv, Sigma_q_inv)) # Q Q P P
-        V1_ext = expand_and_tile(expand_and_tile(V1, 5, 0, M), 6, 0, M) # M M Q Q P P
+        V1_ext = _expand_and_tile(_expand_and_tile(V1, 5, 0, M), 6, 0, M) # M M Q Q P P
 
         # m1
-        Sigma_q_inv_ext = expand_and_tile(Sigma_q_inv, 4, 0, M) # M Q P P
-        y_ext = tf.expand_dims(expand_and_tile(Z, 3, 1, Q), -1) # M Q P 1
+        Sigma_q_inv_ext = _expand_and_tile(Sigma_q_inv, 4, 0, M) # M Q P P
+        y_ext = tf.expand_dims(_expand_and_tile(Z, 3, 1, Q), -1) # M Q P 1
         tmp = tf.matmul(Sigma_q_inv_ext, y_ext) # M Q P 1
-        tmp_ext1 = expand_and_tile(expand_and_tile(tmp, 5, 0, M), 6, 2, Q) # M M Q Q P 1
-        tmp_ext2 = expand_and_tile(expand_and_tile(tmp, 5, 2, Q), 6, 1, M) # M M Q Q P 1
+        tmp_ext1 = _expand_and_tile(_expand_and_tile(tmp, 5, 0, M), 6, 2, Q) # M M Q Q P 1
+        tmp_ext2 = _expand_and_tile(_expand_and_tile(tmp, 5, 2, Q), 6, 1, M) # M M Q Q P 1
         m1 = tf.matmul(V1_ext, tmp_ext1 + tmp_ext2) # M M Q Q P 1
 
         # c2
-        S_ext = expand_and_tile(expand_and_tile(expand_and_tile(expand_and_tile(Xcov, 4, 1, M), 5, 1, M), 6, 3, Q), 7, 3, Q) # N M M Q Q P P
-        c2_var = expand_and_tile(V1_ext, 7, 0, N) + S_ext # N M M Q Q P P
-        m1_ext = expand_and_tile(m1, 7, 0, N) # N M M Q Q P 1
-        mu_ext = tf.expand_dims(expand_and_tile(expand_and_tile(expand_and_tile(expand_and_tile(Xmu, 3, 1, M), 4, 1, M), 5, 3, Q), 6, 3, Q), -1) # N M M Q Q P 1
+        S_ext = _expand_and_tile(_expand_and_tile(_expand_and_tile(_expand_and_tile(Xcov, 4, 1, M), 5, 1, M), 6, 3, Q), 7, 3, Q) # N M M Q Q P P
+        c2_var = _expand_and_tile(V1_ext, 7, 0, N) + S_ext # N M M Q Q P P
+        m1_ext = _expand_and_tile(m1, 7, 0, N) # N M M Q Q P 1
+        mu_ext = tf.expand_dims(_expand_and_tile(_expand_and_tile(_expand_and_tile(_expand_and_tile(Xmu, 3, 1, M), 4, 1, M), 5, 3, Q), 6, 3, Q), -1) # N M M Q Q P 1
         tau = m1_ext - mu_ext
         tau_T = tf.transpose(tau, perm=[0, 1, 2, 3, 4, 6, 5]) # N M M Q Q 1 P
         c2_fac = 1./tf.sqrt(tf.matrix_determinant(c2_var)) * (2 * nppi)**(-P/2.) # N M M Q Q
@@ -129,31 +129,31 @@ class SM(kernels.SM):
         c2 = c2_fac * tf.squeeze(c2_exp, axis=[5,6]) # N M M Q Q
 
         # V2
-        V1_inv_ext = expand_and_tile(_sum(Sigma_q_inv, Sigma_q_inv), 5, 0, N)  # N Q Q P P
-        S_inv = expand_and_tile(expand_and_tile(tf.matrix_inverse(Xcov), 4, 1, Q), 5, 1, Q)  # N Q Q P P
-        V2 = expand_and_tile(expand_and_tile(tf.matrix_inverse(S_inv + V1_inv_ext), 6, 1, M), 7, 1, M) # N M M Q Q P P
+        V1_inv_ext = _expand_and_tile(_sum(Sigma_q_inv, Sigma_q_inv), 5, 0, N)  # N Q Q P P
+        S_inv = _expand_and_tile(_expand_and_tile(tf.matrix_inverse(Xcov), 4, 1, Q), 5, 1, Q)  # N Q Q P P
+        V2 = _expand_and_tile(_expand_and_tile(tf.matrix_inverse(S_inv + V1_inv_ext), 6, 1, M), 7, 1, M) # N M M Q Q P P
 
         # m2
-        V1_inv_ext = expand_and_tile(expand_and_tile(_sum(Sigma_q_inv, Sigma_q_inv), 5, 0, M), 6, 0, M)  # M M Q Q P P
-        term1 = expand_and_tile(tf.matmul(V1_inv_ext, m1), 7, 0, N) # N M M Q Q P 1
+        V1_inv_ext = _expand_and_tile(_expand_and_tile(_sum(Sigma_q_inv, Sigma_q_inv), 5, 0, M), 6, 0, M)  # M M Q Q P P
+        term1 = _expand_and_tile(tf.matmul(V1_inv_ext, m1), 7, 0, N) # N M M Q Q P 1
         term2 = tf.matmul(tf.matrix_inverse(Xcov),tf.expand_dims(Xmu,-1)) # N P 1
-        term2 = expand_and_tile(expand_and_tile(expand_and_tile(expand_and_tile(term2, 4, 1 , Q), 5, 1, Q), 6, 1, M), 7, 1, M) # N M M Q Q P 1
+        term2 = _expand_and_tile(_expand_and_tile(_expand_and_tile(_expand_and_tile(term2, 4, 1 , Q), 5, 1, Q), 6, 1, M), 7, 1, M) # N M M Q Q P 1
         m2 = tf.matmul(V2,term1 + term2) # N M M Q Q P 1
 
         # mean_alpha (ma)
         nu_cross = tf.transpose(_sum(tf.expand_dims(frequencies, -1), tf.expand_dims(frequencies, -1)), perm=[0, 1, 3, 2]) # Q Q 1 P
-        nu_cross = expand_and_tile(expand_and_tile(expand_and_tile(nu_cross, 5, 0, M), 6, 0, M), 7, 0, N) # N M M Q Q 1 P
+        nu_cross = _expand_and_tile(_expand_and_tile(_expand_and_tile(nu_cross, 5, 0, M), 6, 0, M), 7, 0, N) # N M M Q Q 1 P
         tmp = tf.matmul(Z,tf.transpose(frequencies)) # M Q
-        tmp_ext1 = expand_and_tile(expand_and_tile(tmp, 3, 0, M), 4, 2, Q) # M M Q Q
-        tmp_ext2 = expand_and_tile(expand_and_tile(tmp, 3, -1, Q), 4, 1, M) # M M Q Q
+        tmp_ext1 = _expand_and_tile(_expand_and_tile(tmp, 3, 0, M), 4, 2, Q) # M M Q Q
+        tmp_ext2 = _expand_and_tile(_expand_and_tile(tmp, 3, -1, Q), 4, 1, M) # M M Q Q
         tmp_cross_min = -tmp_ext1 - tmp_ext2 # M M Q Q
-        ma = tf.squeeze(tf.matmul(nu_cross, m2), axis=[5,6]) + expand_and_tile(tmp_cross_min, 5, 0, N) # N M M Q Q
+        ma = tf.squeeze(tf.matmul(nu_cross, m2), axis=[5,6]) + _expand_and_tile(tmp_cross_min, 5, 0, N) # N M M Q Q
 
         # mean_beta (mb)
         nu_cross_min = tf.transpose(_sum(tf.expand_dims(frequencies, -1), tf.expand_dims(-1. * frequencies, -1)), perm=[0, 1, 3, 2]) # Q Q 1 P
-        nu_cross_min = expand_and_tile(expand_and_tile(expand_and_tile(nu_cross_min, 5, 0, M), 6, 0, M), 7, 0, N) # N M M Q Q 1 P
+        nu_cross_min = _expand_and_tile(_expand_and_tile(_expand_and_tile(nu_cross_min, 5, 0, M), 6, 0, M), 7, 0, N) # N M M Q Q 1 P
         tmp_cross_plus = tmp_ext1 - tmp_ext2 # M M Q Q
-        mb = tf.squeeze(tf.matmul(nu_cross_min, m2), axis=[5,6]) + expand_and_tile(tmp_cross_plus, 5, 0, N) # N M M Q Q
+        mb = tf.squeeze(tf.matmul(nu_cross_min, m2), axis=[5,6]) + _expand_and_tile(tmp_cross_plus, 5, 0, N) # N M M Q Q
 
         # sigma alpha (sa)
         sa = tf.squeeze(tf.matmul(tf.matmul(nu_cross, V2), nu_cross, transpose_b=True), axis=[5, 6]) # N M M Q Q
@@ -163,7 +163,8 @@ class SM(kernels.SM):
 
         # Finally,
         res = .5 *  C * c1 * c2 * (tf.exp(-.5 * sa)*tf.cos(ma) + tf.exp(-.5 * sb)*tf.cos(mb)) # N M M Q Q
-        res = tf.reduce_sum(tf.reduce_sum(tf.reduce_sum(res, axis=4), axis=3), axis=0) # M M
+        res = tf.reduce_sum(tf.reduce_sum(res, axis=4), axis=3) # N M M
+        return res
 
     def _expand_and_tile(self, tensor, rank, axis, multiple):
         """
