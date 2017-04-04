@@ -5,6 +5,7 @@ from setuptools import setup
 import re
 import os
 import sys
+import tensorflow as tf
 
 # load version form _version.py
 VERSIONFILE = "GPflow/_version.py"
@@ -17,9 +18,10 @@ else:
     raise RuntimeError("Unable to find version string in %s." % (VERSIONFILE,))
 
 # Compile the bespoke TensorFlow ops in-place. Not sure how this would work if this script wasn't executed as `develop`.
+tf_include = tf.sysconfig.get_include()
 compile_command = "g++ -std=c++11 -shared ./GPflow/tfops/vec_to_tri.cc " \
                   "GPflow/tfops/tri_to_vec.cc -o GPflow/tfops/matpackops.so " \
-                  "-fPIC -I $(python -c 'import tensorflow as tf; print(tf.sysconfig.get_include())')"
+                  "-fPIC -I {}".format(tf_include)
 if sys.platform == "darwin":
     # Additional command for Macs, as instructed by the TensorFlow docs
     compile_command += " -undefined dynamic_lookup"
@@ -44,8 +46,9 @@ setup(name='GPflow',
       package_dir={'GPflow': 'GPflow'},
       py_modules=['GPflow.__init__'],
       test_suite='testing',
-      install_requires=['numpy>=1.9', 'scipy>=0.16', 'tensorflow>=0.11',
-                        'pandas>=0.19'],
+      install_requires=['numpy>=1.9', 'scipy>=0.16', 'pandas>=0.18.1'],
+      extras_require={'tensorflow': ['tensorflow>=1.0.0'],
+                      'tensorflow with gpu': ['tensorflow-gpu>=1.0.0']},
       classifiers=['License :: OSI Approved :: BSD License',
                    'Natural Language :: English',
                    'Operating System :: MacOS :: MacOS X',

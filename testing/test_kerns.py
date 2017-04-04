@@ -3,7 +3,7 @@ import GPflow
 import tensorflow as tf
 import numpy as np
 import unittest
-from .reference import referenceRbfKernel, referencePeriodicKernel
+from .reference import referenceRbfKernel, referenceArcCosineKernel, referencePeriodicKernel
 
 
 class TestRbf(unittest.TestCase):
@@ -25,6 +25,82 @@ class TestRbf(unittest.TestCase):
             gram_matrix = tf.Session().run(kernel.K(X), feed_dict={x_free: kernel.get_free_state(), X: X_data})
         self.assertTrue(np.allclose(gram_matrix, reference_gram_matrix))
 
+
+class TestArcCosine(unittest.TestCase):
+    def evalKernelError(self, D, variance, weight_variances,
+                        bias_variance, order, ARD, X_data):
+        kernel = GPflow.kernels.ArcCosine(D,
+                                          order=order,
+                                          variance=variance,
+                                          weight_variances=weight_variances,
+                                          bias_variance=bias_variance,
+                                          ARD=ARD)
+        rng = np.random.RandomState(1)
+
+        x_free = tf.placeholder('float64')
+        kernel.make_tf_array(x_free)
+        X = tf.placeholder('float64')
+
+        if weight_variances is None:
+            weight_variances = 1.
+        reference_gram_matrix = referenceArcCosineKernel(X_data, order,
+                                                         weight_variances,
+                                                         bias_variance,
+                                                         variance)
+
+        with kernel.tf_mode():
+            gram_matrix = tf.Session().run(kernel.K(X), feed_dict={x_free: kernel.get_free_state(), X: X_data})
+
+        self.assertTrue(np.allclose(gram_matrix, reference_gram_matrix))
+
+    def test_1d(self):
+        D = 1
+        N = 3
+        weight_variances = 1.7
+        bias_variance = 0.6
+        variance = 2.3
+        ARD = False
+        orders = GPflow.kernels.ArcCosine.implemented_orders
+
+        rng = np.random.RandomState(1)
+        X_data = rng.randn(N, D)
+        for order in orders:
+            self.evalKernelError(D, variance, weight_variances,
+                                 bias_variance, order, ARD, X_data)
+
+    def test_3d(self):
+        D = 3
+        N = 8
+        weight_variances = np.array([0.4, 4.2, 2.3])
+        bias_variance = 1.9
+        variance = 1e-2
+        ARD = True
+        orders = GPflow.kernels.ArcCosine.implemented_orders
+
+        rng = np.random.RandomState(1)
+        X_data = rng.randn(N, D)
+        for order in orders:
+            self.evalKernelError(D, variance, weight_variances,
+                                bias_variance, order, ARD, X_data)
+
+    def test_non_implemented_order(self):
+        with self.assertRaises(ValueError):
+            GPflow.kernels.ArcCosine(1, order=42)
+
+    def test_weight_initializations(self):
+        D = 1
+        N = 3
+        weight_variances = None
+        bias_variance = 1.
+        variance = 1.
+        ARDs = {False, True}
+        order = 0
+
+        rng = np.random.RandomState(1)
+        X_data = rng.randn(N, D)
+        for ARD in ARDs:
+            self.evalKernelError(D, variance, weight_variances,
+                                 bias_variance, order, ARD, X_data)
 
 class TestPeriodic(unittest.TestCase):
     def evalKernelError(self, D, lengthscale, variance, period, X_data):
@@ -80,7 +156,7 @@ class TestCoregion(unittest.TestCase):
     def test_diag(self):
         K = self.k.compute_K_symm(self.X)
         Kdiag = self.k.compute_Kdiag(self.X)
-        self.assertTrue(np.all(np.diag(K) == Kdiag))
+        self.assertTrue(np.allclose(np.diag(K), Kdiag))
 
     def test_slice(self):
         # compute another kernel with additinoal inputs, make sure out kernel is still okay.
@@ -97,7 +173,7 @@ class TestKernSymmetry(unittest.TestCase):
     def setUp(self):
         tf.reset_default_graph()
         self.kernels = GPflow.kernels.Stationary.__subclasses__() + [GPflow.kernels.Constant, GPflow.kernels.Linear,
-                                                                     GPflow.kernels.Polynomial]
+                                                                     GPflow.kernels.Polynomial, GPflow.kernels.ArcCosine]
         self.rng = np.random.RandomState()
 
     def test_1d(self):
@@ -139,6 +215,8 @@ class TestKernDiags(unittest.TestCase):
         self.kernels.append(GPflow.kernels.RBF(inputdim) +
                             GPflow.kernels.Linear(inputdim, ARD=True, variance=rng.rand(inputdim)))
         self.kernels.append(GPflow.kernels.PeriodicKernel(inputdim))
+        self.kernels.extend(GPflow.kernels.ArcCosine(inputdim, order=order)
+                            for order in GPflow.kernels.ArcCosine.implemented_orders)
 
         self.x_free = tf.placeholder('float64')
         [k.make_tf_array(self.x_free) for k in self.kernels]
@@ -216,34 +294,43 @@ class TestWhite(unittest.TestCase):
 
 class TestSlice(unittest.TestCase):
     """
-    Make sure the results of a sliced kernel is the ame as an unsliced kernel
+    Make sure the results of a sliced kernel is the same as an unsliced kernel
     with correctly sliced data...
     """
 
     def setUp(self):
-        tf.reset_default_graph()
         self.rng = np.random.RandomState(0)
-        self.k1 = GPflow.kernels.RBF(1, active_dims=[0])
-        self.k2 = GPflow.kernels.RBF(1, active_dims=[1])
-        self.k3 = GPflow.kernels.RBF(1)
+        tf.reset_default_graph()
+
         self.X = self.rng.randn(20, 2)
         self.Z = self.rng.randn(10, 2)
 
+        kernels = GPflow.kernels.Stationary.__subclasses__() + [GPflow.kernels.Constant, GPflow.kernels.Linear,
+                                                                GPflow.kernels.Polynomial]
+        self.kernels = []
+        for kernclass in kernels:
+            k1 = kernclass(1, active_dims=[0])
+            k2 = kernclass(1, active_dims=[1])
+            k3 = kernclass(1, active_dims=slice(0, 1))
+            self.kernels.append([k1, k2, k3])
+
     def test_symm(self):
-        K1 = self.k1.compute_K_symm(self.X)
-        K2 = self.k2.compute_K_symm(self.X)
-        K3 = self.k3.compute_K_symm(self.X[:, :1])
-        K4 = self.k3.compute_K_symm(self.X[:, 1:])
-        self.assertTrue(np.allclose(K1, K3))
-        self.assertTrue(np.allclose(K2, K4))
+        for k1, k2, k3 in self.kernels:
+            K1 = k1.compute_K_symm(self.X)
+            K2 = k2.compute_K_symm(self.X)
+            K3 = k3.compute_K_symm(self.X[:, :1])
+            K4 = k3.compute_K_symm(self.X[:, 1:])
+            self.assertTrue(np.allclose(K1, K3))
+            self.assertTrue(np.allclose(K2, K4))
 
     def test_asymm(self):
-        K1 = self.k1.compute_K(self.X, self.Z)
-        K2 = self.k2.compute_K(self.X, self.Z)
-        K3 = self.k3.compute_K(self.X[:, :1], self.Z[:, :1])
-        K4 = self.k3.compute_K(self.X[:, 1:], self.Z[:, 1:])
-        self.assertTrue(np.allclose(K1, K3))
-        self.assertTrue(np.allclose(K2, K4))
+        for k1, k2, k3 in self.kernels:
+            K1 = k1.compute_K(self.X, self.Z)
+            K2 = k2.compute_K(self.X, self.Z)
+            K3 = k3.compute_K(self.X[:, :1], self.Z[:, :1])
+            K4 = k3.compute_K(self.X[:, 1:], self.Z[:, 1:])
+            self.assertTrue(np.allclose(K1, K3))
+            self.assertTrue(np.allclose(K2, K4))
 
 
 class TestProd(unittest.TestCase):
@@ -409,6 +496,10 @@ class TestARDInit(unittest.TestCase):
         k2 = GPflow.kernels.RBF(3, lengthscales=np.ones(3) * 2.3)
         self.assertTrue(np.all(k1.lengthscales.value == k2.lengthscales.value))
 
+    def test_MLP(self):
+        k1 = GPflow.kernels.ArcCosine(3, weight_variances=1.23, ARD=True)
+        k2 = GPflow.kernels.ArcCosine(3, weight_variances=np.ones(3) * 1.23, ARD=True)
+        self.assertTrue(np.all(k1.weight_variances.value == k2.weight_variances.value))
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,7 @@ import numpy as np
 import tensorflow as tf
 from . import tf_wraps as tfw
 from ._settings import settings
+
 float_type = settings.dtypes.float_type
 np_float_type = np.float32 if float_type is tf.float32 else np.float64
 
@@ -125,7 +126,9 @@ class Log1pe(Transform):
         self._lower = lower
 
     def forward(self, x):
-        return np.log(1. + np.exp(x)) + self._lower
+        result = np.log(1. + np.exp(x)) + self._lower
+        # do not transform large numbers, they overflow and the mapping is exactly identity.
+        return np.where(x > 35, x + self._lower, result)
 
     def tf_forward(self, x):
         return tf.nn.softplus(x) + self._lower
@@ -134,7 +137,8 @@ class Log1pe(Transform):
         return -tf.reduce_sum(tf.log(1. + tf.exp(-x)))
 
     def backward(self, y):
-        return np.log(np.exp(y - self._lower) - np.ones(1, np_float_type))
+        result = np.log(np.exp(y - self._lower) - np.ones(1, np_float_type))
+        return np.where(y > 35, y-self._lower, result)
 
     def __str__(self):
         return '+ve'
@@ -144,13 +148,11 @@ class Logistic(Transform):
     def __init__(self, a=0., b=1.):
         Transform.__init__(self)
         assert b > a
-        self.a, self.b = a, b
-        self._a = tf.constant(a, float_type)
-        self._b = tf.constant(b, float_type)
+        self.a, self.b = float(a), float(b)
 
     def tf_forward(self, x):
         ex = tf.exp(-x)
-        return self._a + (self._b - self._a) / (1. + ex)
+        return self.a + (self.b - self.a) / (1. + ex)
 
     def forward(self, x):
         ex = np.exp(-x)
@@ -160,21 +162,50 @@ class Logistic(Transform):
         return -np.log((self.b - self.a) / (y - self.a) - 1.)
 
     def tf_log_jacobian(self, x):
-        return tf.reduce_sum(x - 2. * tf.log(tf.exp(x) + 1.) + tf.log(self._b - self._a))
+        return tf.reduce_sum(x - 2. * tf.log(tf.exp(x) + 1.) + np.log(self.b - self.a))
 
     def __str__(self):
         return '[' + str(self.a) + ', ' + str(self.b) + ']'
 
-    def __getstate__(self):
-        d = Transform.__getstate__(self)
-        d.pop('_a')
-        d.pop('_b')
-        return d
 
-    def __setstate__(self, d):
-        Transform.__setstate__(self, d)
-        self._a = tf.constant(self.a, float_type)
-        self._b = tf.constant(self.b, float_type)
+class DiagMatrix(Transform):
+    """
+    A transform to represent diagonal matrices.
+
+    The output of this transform is a N x dim x dim array of diagonal matrices.
+    The contructor argumnet dim specifies the size of the matrixes.
+
+    Additionally, to ensure that the matrices are positive definite, the
+    diagonal elements are pushed through a 'positive' transform, defaulting to
+    log1pe.
+    """
+    def __init__(self, dim=1, positive_transform=Log1pe()):
+        self.dim = dim
+        self._lower = 1e-6
+        self._positive_transform = positive_transform
+
+    def forward(self, x):
+        # Create diagonal matrix
+        x = self._positive_transform.forward(x).reshape((-1, self.dim))
+        m = np.zeros((x.shape[0], x.shape[1], x.shape[1]))
+        m[(np.s_[:],) + np.diag_indices(x.shape[1])] = x
+        return m
+
+    def backward(self, y):
+        # Return diagonals of matrices
+        return self._positive_transform.backward(y.reshape(-1, self.dim, self.dim).diagonal(0, 1, 2).flatten())
+
+    def tf_forward(self, x):
+        return tf.matrix_diag(tf.reshape(self._positive_transform.tf_forward(x), (-1, self.dim)))
+
+    def tf_log_jacobian(self, x):
+        return tf.zeros((1,), float_type) + self._positive_transform.tf_log_jacobian(x)
+
+    def __str__(self):
+        return 'DiagMatrix'
+
+    def free_state_size(self, variable_shape):
+        return variable_shape[0] * variable_shape[1]
 
 
 class LowerTriangular(Transform):
@@ -249,12 +280,12 @@ class LowerTriangular(Transform):
         return tf.squeeze(fwd) if self.squeeze else fwd
 
     def tf_log_jacobian(self, x):
-        return tf.zeros((1,), float_type) - np.inf
+        return tf.zeros((1,), float_type)
 
     def free_state_size(self, variable_shape):
         matrix_batch = len(variable_shape) > 2
         if ((not matrix_batch and self.num_matrices != 1) or
-           (matrix_batch and variable_shape[2] != self.num_matrices)):
+                (matrix_batch and variable_shape[2] != self.num_matrices)):
             raise ValueError("Number of matrices must be consistent with what was passed to the constructor.")
         if variable_shape[0] != variable_shape[1]:
             raise ValueError("Matrices passed must be square.")
