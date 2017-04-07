@@ -14,47 +14,6 @@ float_type = settings.dtypes.float_type
 
 class SM(kernels.SM):
 
-    def _expand_and_tile(self, tensor, rank, axis, multiple):
-        """
-        First expands the tensor in one dimension on the 'axis' position,
-        then tiles the tensor 'multiple' times on 'axis'.
-
-        Params:
-        :tensor: tensor that will be expanded and tiled
-        :rank: rank of the tensor after the operation
-        :axis: axis to expand the tensor
-        :multiple: number of times the tensor will be repeated
-
-        Example:
-            tensor A: with shape [2, 2]
-            rank: tf.rank(A) + 1 = 3
-            axis: 1
-            multiple: 3
-
-            returns: tf.tile(tf.expand_dims(A,axis), [1,multiple,1])
-            The result is now rank 3 with shape [2, 3, 2]
-        """
-        return tf.tile(tf.expand_dims(tensor, axis), \
-                       tf.stack([(multiple if ax == axis else 1) for ax in range(rank) ]))
-
-    def _subs(self, X, X2):
-        N, M = tf.shape(X)[0], tf.shape(X2)[0]
-        X = tf.tile(tf.expand_dims(X, 1), [1, M, 1])
-        X2 = tf.tile(tf.expand_dims(X2, 1), [1, N, 1])
-        X2 = tf.transpose(X2, perm=[1, 0, 2])
-        return tf.subtract(X,X2)
-
-    def _prod(self, X, X2):
-        N, M = tf.shape(X)[0], tf.shape(X2)[0]
-        X = tf.tile(tf.expand_dims(X, 1), [1, M])
-        X2 = tf.tile(tf.expand_dims(X2, 0), [N, 1])
-        return X * X2
-
-    def _sum(self, X, X2):
-        N, M = tf.shape(X)[0], tf.shape(X2)[0]
-        X = tf.tile(tf.expand_dims(X, 1), [1, M, 1, 1])
-        X2 = tf.tile(tf.expand_dims(X2, 0), [N, 1, 1, 1])
-        return X + X2
 
     def eKdiag(self, X, Xcov=None):
         """
@@ -62,6 +21,7 @@ class SM(kernels.SM):
         :param X:
         :return: N
         """
+        print "eKdiag"
         return self.Kdiag(X)
 
     def eKxz(self, Z, Xmu, Xcov):
@@ -72,6 +32,7 @@ class SM(kernels.SM):
         :param Xcov: NxDxD
         :return: NxM
         """
+        print "eKxz"
         Xcov = self._slice_cov(Xcov)
         Z, Xmu = self._slice(Z, Xmu)
         M = tf.shape(Z)[0]
@@ -127,6 +88,7 @@ class SM(kernels.SM):
         :param Xcov: X covariance matrices (NxDxD)
         :return: NxMxM
         """
+        print "eKzxKxz"
         # use only active dimensions
         Xcov = self._slice_cov(Xcov)
         Z, Xmu = self._slice(Z, Xmu)
@@ -221,6 +183,47 @@ class SM(kernels.SM):
         res = tf.reduce_sum(tf.reduce_sum(res, axis=4), axis=3) # N M M
         return res
 
+    def _expand_and_tile(self, tensor, rank, axis, multiple):
+        """
+        First expands the tensor in one dimension on the 'axis' position,
+        then tiles the tensor 'multiple' times on 'axis'.
+
+        Params:
+        :tensor: tensor that will be expanded and tiled
+        :rank: rank of the tensor after the operation
+        :axis: axis to expand the tensor
+        :multiple: number of times the tensor will be repeated
+
+        Example:
+            tensor A: with shape [2, 2]
+            rank: tf.rank(A) + 1 = 3
+            axis: 1
+            multiple: 3
+
+            returns: tf.tile(tf.expand_dims(A,axis), [1,multiple,1])
+            The result is now rank 3 with shape [2, 3, 2]
+        """
+        return tf.tile(tf.expand_dims(tensor, axis), \
+                       tf.stack([(multiple if ax == axis else 1) for ax in range(rank) ]))
+
+    def _subs(self, X, X2):
+        N, M = tf.shape(X)[0], tf.shape(X2)[0]
+        X = tf.tile(tf.expand_dims(X, 1), [1, M, 1])
+        X2 = tf.tile(tf.expand_dims(X2, 1), [1, N, 1])
+        X2 = tf.transpose(X2, perm=[1, 0, 2])
+        return tf.subtract(X,X2)
+
+    def _prod(self, X, X2):
+        N, M = tf.shape(X)[0], tf.shape(X2)[0]
+        X = tf.tile(tf.expand_dims(X, 1), [1, M])
+        X2 = tf.tile(tf.expand_dims(X2, 0), [N, 1])
+        return X * X2
+
+    def _sum(self, X, X2):
+        N, M = tf.shape(X)[0], tf.shape(X2)[0]
+        X = tf.tile(tf.expand_dims(X, 1), [1, M, 1, 1])
+        X2 = tf.tile(tf.expand_dims(X2, 0), [N, 1, 1, 1])
+        return X + X2
 
 
 class RBF(kernels.RBF):

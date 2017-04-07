@@ -370,7 +370,7 @@ class SM(Kern):
 
     """
 
-    def __init__(self, input_dim, Q, weights, frequencies, lengthscales, active_dims=None):
+    def __init__(self, input_dim, Q, weights=None, frequencies=None, lengthscales=None, active_dims=None):
         """
         - input_dim: dimension of the inputs (abbreviated by p)
         - K: amount of spectral mixtures
@@ -380,9 +380,15 @@ class SM(Kern):
 
         """
         Kern.__init__(self, input_dim, active_dims)
-        assert len(weights.shape) == 1 and len(weights) == Q
-        assert lengthscales.shape == (Q,input_dim)
-        assert frequencies.shape == (Q,input_dim)
+        # assert len(weights.shape) == 1 and len(weights) == Q
+        # assert lengthscales.shape == (Q,input_dim)
+        # assert frequencies.shape == (Q,input_dim)
+        if weights is None:
+            weights = np.ones(Q)
+        if frequencies is None:
+            frequencies = .5 * np.random.rand(Q,input_dim)
+        if lengthscales is None:
+            lengthscales = 1. / (np.random.rand(Q,input_dim) * 1.E4)
         self.Q = Q
         self.weights = Param(weights, transforms.positive)
         self.frequencies = Param(frequencies, transforms.positive)
