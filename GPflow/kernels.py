@@ -384,11 +384,12 @@ class SM(Kern):
         # assert lengthscales.shape == (Q,input_dim)
         # assert frequencies.shape == (Q,input_dim)
         if weights is None:
-            weights = np.ones(Q)
+            weights = np.ones(Q)/float(Q)
         if frequencies is None:
             frequencies = .5 * np.random.rand(Q,input_dim)
         if lengthscales is None:
             lengthscales = 1. / (np.random.rand(Q,input_dim) * 1.E4)
+
         self.Q = Q
         self.weights = Param(weights, transforms.positive)
         self.frequencies = Param(frequencies, transforms.positive)
@@ -405,8 +406,8 @@ class SM(Kern):
         tau = self._tau(X, X2)
         K_tau = tf.tile(tf.expand_dims(tau, 2), [1,1,self.Q,1])
 
-        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * self.frequencies, axis=3))
-        exp = tf.reduce_prod(tf.exp(-2 * np.pi**2 * tf.square(K_tau * self.lengthscales)), axis=3)
+        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * tf.exp(self.frequencies), axis=3))
+        exp = tf.reduce_prod(tf.exp(-2 * np.pi**2 * tf.square(K_tau / tf.exp(self.lengthscales))), axis=3)
         return tf.reduce_sum(self.weights * exp * cos, axis=2)
 
 
