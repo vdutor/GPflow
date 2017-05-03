@@ -380,9 +380,9 @@ class SM(Kern):
 
         """
         Kern.__init__(self, input_dim, active_dims)
-        # assert len(weights.shape) == 1 and len(weights) == Q
-        # assert lengthscales.shape == (Q,input_dim)
-        # assert frequencies.shape == (Q,input_dim)
+        assert len(weights.shape) == 1 and len(weights) == Q
+        assert lengthscales.shape == (Q,input_dim)
+        assert frequencies.shape == (Q,input_dim)
         if weights is None:
             weights = np.ones(Q)/float(Q)
         if frequencies is None:
@@ -406,8 +406,8 @@ class SM(Kern):
         tau = self._tau(X, X2)
         K_tau = tf.tile(tf.expand_dims(tau, 2), [1,1,self.Q,1])
 
-        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * tf.exp(self.frequencies), axis=3))
-        exp = tf.reduce_prod(tf.exp(-2 * np.pi**2 * tf.square(K_tau / tf.exp(self.lengthscales))), axis=3)
+        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * (self.frequencies), axis=3))
+        exp = tf.exp(-2 * np.pi**2 * tf.reduce_sum(tf.square(K_tau / tf.exp(self.lengthscales)), axis=3))
         return tf.reduce_sum(self.weights * exp * cos, axis=2)
 
 
@@ -421,7 +421,6 @@ class SM(Kern):
         X2 = tf.tile(tf.expand_dims(X2, 1), [1, N, 1])
         X2 = tf.transpose(X2, perm=[1, 0, 2])
         return tf.subtract(X,X2)
-
 
 class Linear(Kern):
     """

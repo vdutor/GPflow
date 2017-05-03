@@ -171,9 +171,9 @@ class Likelihood(Parameterized):
 
 
 class Gaussian(Likelihood):
-    def __init__(self):
+    def __init__(self, variance=1.):
         Likelihood.__init__(self)
-        self.variance = Param(1.0, transforms.positive)
+        self.variance = Param(variance, transforms.positive)
 
     def logp(self, F, Y):
         return densities.gaussian(F, Y, self.variance)

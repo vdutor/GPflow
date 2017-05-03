@@ -43,12 +43,16 @@ class SM(kernels.SM):
         P = self.input_dim # equals D
         Q = self.Q
 
-        lengthscales = tf.square(self.lengthscales)
+        lengthscales = tf.square(1./tf.exp(self.lengthscales))
         weights = self.weights
         frequencies = self.frequencies
 
-        Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(1./lengthscales) # Q P P
-        Sigma_q_det = tf.matrix_determinant(Sigma_q)
+        jitter_eye = tf.eye(P, dtype=tf.float64) * 1.e-6
+
+        Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(tf.square(tf.exp(self.lengthscales))) # Q P P
+        # Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(1./lengthscales) # Q P P
+        # Sigma_q_det = tf.matrix_determinant(Sigma_q)
+        Sigma_q_det = (1./(4 * nppi**2))**P * tf.reduce_prod(tf.square(tf.exp(self.lengthscales)), axis=1) # Q
         Sigma_q_inv = (4 * nppi**2) * tf.matrix_diag(lengthscales) # Q P P
         Sigma_q_inv_ex = self._expand_and_tile(Sigma_q_inv, 4, 0, N) # N Q P P
 
@@ -72,7 +76,8 @@ class SM(kernels.SM):
         mean_c_T = tf.transpose(mean_c, perm=[0,1,2,4,3])
         tmp2 = self._expand_and_tile(Sigma_q, 4, 0, N) + self._expand_and_tile(Xcov, 4, 1, Q) # N Q P P
         var_c = self._expand_and_tile(tmp2, 5, 1, M) # N M Q P P
-        c_fac = 1./tf.sqrt(tf.matrix_determinant(var_c)) * (2 * nppi)**(-P/2.) # N M Q
+        jitter_eye_2 = self._expand_and_tile(self._expand_and_tile(self._expand_and_tile(jitter_eye, 3, 0, Q), 4, 0, M), 5, 0, N) # N M Q P P
+        c_fac = 1./tf.sqrt(tf.matrix_determinant(var_c + jitter_eye_2)) * (2 * nppi)**(-P/2.) # N M Q
         exp2 = tf.exp(-.5 * (tf.matmul(mean_c_T, tf.matmul(tf.matrix_inverse(var_c), mean_c)))) # N M Q 1 1
         c = c_fac * tf.squeeze(exp2, axis=[3,4])
 
@@ -100,13 +105,15 @@ class SM(kernels.SM):
         P = self.input_dim # equals D of the comment
         Q = self.Q
 
-        lengthscales = tf.square(self.lengthscales)
+        lengthscales = 1. / tf.square(tf.exp(self.lengthscales))
         frequencies = 2 * nppi * self.frequencies
         weights = self.weights
 
         # C
-        Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(1./lengthscales) # Q P P
-        Sigma_q_det = tf.matrix_determinant(Sigma_q) # Q
+        Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(tf.square(tf.exp(self.lengthscales))) # Q P P
+        # Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(1./lengthscales) # Q P P
+        # Sigma_q_det = tf.matrix_determinant(Sigma_q) # Q
+        Sigma_q_det = (1./(4 * nppi**2))**P * tf.reduce_prod(tf.square(tf.exp(self.lengthscales)), axis=1) # Q
         Sigma_q_det_cross = self._prod(Sigma_q_det, Sigma_q_det) # Q Q
         weights_cross = self._prod(weights, weights) # Q Q
         C = weights_cross * tf.sqrt(Sigma_q_det_cross) * (2*nppi)**P # Q Q
