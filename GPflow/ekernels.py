@@ -37,23 +37,20 @@ class SM(kernels.SM):
         Z, Xmu = self._slice(Z, Xmu)
         M = tf.shape(Z)[0]
         N = tf.shape(Xmu)[0]
-        # D = tf.shape(Xmu)[1]
-        # P = D
-        # N, M = tf.shape(Xmu)[0], tf.shape(Z)[0]
         P = self.input_dim # equals D
         Q = self.Q
 
-        lengthscales = tf.square(1./tf.exp(self.lengthscales))
+        lengthscales = self.lengthscales if self.ARD else self._expand_and_tile(self.lengthscales, 2, 1, self.input_dim)
+        frequencies = self.frequencies if self.ARD else self._expand_and_tile(self.frequencies, 2, 1, self.input_dim)
         weights = self.weights
-        frequencies = self.frequencies
+
+        lengthscales_inv = 1. / tf.square(tf.exp(lengthscales))
 
         jitter_eye = tf.eye(P, dtype=tf.float64) * 1.e-6
 
-        Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(tf.square(tf.exp(self.lengthscales))) # Q P P
-        # Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(1./lengthscales) # Q P P
-        # Sigma_q_det = tf.matrix_determinant(Sigma_q)
-        Sigma_q_det = (1./(4 * nppi**2))**P * tf.reduce_prod(tf.square(tf.exp(self.lengthscales)), axis=1) # Q
-        Sigma_q_inv = (4 * nppi**2) * tf.matrix_diag(lengthscales) # Q P P
+        Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(tf.square(tf.exp(lengthscales))) # Q P P
+        Sigma_q_det = (1./(4 * nppi**2))**P * tf.reduce_prod(tf.square(tf.exp(lengthscales)), axis=1) # Q
+        Sigma_q_inv = (4 * nppi**2) * tf.matrix_diag(lengthscales_inv) # Q P P
         Sigma_q_inv_ex = self._expand_and_tile(Sigma_q_inv, 4, 0, N) # N Q P P
 
         S_inv = tf.matrix_inverse(Xcov) # N P P
@@ -99,21 +96,19 @@ class SM(kernels.SM):
         Z, Xmu = self._slice(Z, Xmu)
         M = tf.shape(Z)[0]
         N = tf.shape(Xmu)[0]
-        # D = tf.shape(Xmu)[1]
-        # P = D
-        # N, M = tf.shape(Xmu)[0], tf.shape(Z)[0]
         P = self.input_dim # equals D of the comment
         Q = self.Q
 
-        lengthscales = 1. / tf.square(tf.exp(self.lengthscales))
-        frequencies = 2 * nppi * self.frequencies
+        lengthscales = self.lengthscales if self.ARD else self._expand_and_tile(self.lengthscales, 2, 1, self.input_dim)
+        frequencies = self.frequencies if self.ARD else self._expand_and_tile(self.frequencies, 2, 1, self.input_dim)
         weights = self.weights
 
+        lengthscales_inv = 1. / tf.square(tf.exp(lengthscales))
+        frequencies = 2 * nppi * frequencies
+
         # C
-        Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(tf.square(tf.exp(self.lengthscales))) # Q P P
-        # Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(1./lengthscales) # Q P P
-        # Sigma_q_det = tf.matrix_determinant(Sigma_q) # Q
-        Sigma_q_det = (1./(4 * nppi**2))**P * tf.reduce_prod(tf.square(tf.exp(self.lengthscales)), axis=1) # Q
+        Sigma_q = 1./(4 * nppi**2) * tf.matrix_diag(tf.square(tf.exp(lengthscales))) # Q P P
+        Sigma_q_det = (1./(4 * nppi**2))**P * tf.reduce_prod(tf.square(tf.exp(lengthscales)), axis=1) # Q
         Sigma_q_det_cross = self._prod(Sigma_q_det, Sigma_q_det) # Q Q
         weights_cross = self._prod(weights, weights) # Q Q
         C = weights_cross * tf.sqrt(Sigma_q_det_cross) * (2*nppi)**P # Q Q
@@ -129,7 +124,7 @@ class SM(kernels.SM):
         c1 = self._expand_and_tile(c1_fac * tf.squeeze(c1_exp, axis=[4,5]), 5, 0, N) # N M M Q Q
 
         # V1
-        Sigma_q_inv = (4 * nppi**2) * tf.matrix_diag(lengthscales) # Q P P
+        Sigma_q_inv = (4 * nppi**2) * tf.matrix_diag(lengthscales_inv) # Q P P
         V1 = tf.matrix_inverse(self._sum(Sigma_q_inv, Sigma_q_inv)) # Q Q P P
         V1_ext = self._expand_and_tile(self._expand_and_tile(V1, 5, 0, M), 6, 0, M) # M M Q Q P P
 
@@ -189,29 +184,6 @@ class SM(kernels.SM):
         res = .5 *  C * c1 * c2 * (tf.exp(-.5 * sa)*tf.cos(ma) + tf.exp(-.5 * sb)*tf.cos(mb)) # N M M Q Q
         res = tf.reduce_sum(tf.reduce_sum(res, axis=4), axis=3) # N M M
         return res
-
-    def _expand_and_tile(self, tensor, rank, axis, multiple):
-        """
-        First expands the tensor in one dimension on the 'axis' position,
-        then tiles the tensor 'multiple' times on 'axis'.
-
-        Params:
-        :tensor: tensor that will be expanded and tiled
-        :rank: rank of the tensor after the operation
-        :axis: axis to expand the tensor
-        :multiple: number of times the tensor will be repeated
-
-        Example:
-            tensor A: with shape [2, 2]
-            rank: tf.rank(A) + 1 = 3
-            axis: 1
-            multiple: 3
-
-            returns: tf.tile(tf.expand_dims(A,axis), [1,multiple,1])
-            The result is now rank 3 with shape [2, 3, 2]
-        """
-        return tf.tile(tf.expand_dims(tensor, axis), \
-                       tf.stack([(multiple if ax == axis else 1) for ax in range(rank) ]))
 
     def _subs(self, X, X2):
         N, M = tf.shape(X)[0], tf.shape(X2)[0]

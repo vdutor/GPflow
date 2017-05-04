@@ -370,7 +370,7 @@ class SM(Kern):
 
     """
 
-    def __init__(self, input_dim, Q, weights=None, frequencies=None, lengthscales=None, active_dims=None):
+    def __init__(self, input_dim, Q, weights=None, frequencies=None, lengthscales=None, active_dims=None, ARD=True):
         """
         - input_dim: dimension of the inputs (abbreviated by p)
         - K: amount of spectral mixtures
@@ -380,16 +380,31 @@ class SM(Kern):
 
         """
         Kern.__init__(self, input_dim, active_dims)
-        assert len(weights.shape) == 1 and len(weights) == Q
-        assert lengthscales.shape == (Q,input_dim)
-        assert frequencies.shape == (Q,input_dim)
-        if weights is None:
-            weights = np.ones(Q)/float(Q)
-        if frequencies is None:
-            frequencies = .5 * np.random.rand(Q,input_dim)
-        if lengthscales is None:
-            lengthscales = 1. / (np.random.rand(Q,input_dim) * 1.E4)
 
+        if ARD:
+            if weights is None:
+                weights = np.ones(Q)/float(Q)
+            if frequencies is None:
+                frequencies = .5 * np.random.rand(Q,input_dim)
+            if lengthscales is None:
+                lengthscales = np.random.rand(Q,input_dim) * 10
+
+            assert len(weights.shape) == 1 and len(weights) == Q
+            assert lengthscales.shape == (Q,input_dim)
+            assert frequencies.shape == (Q,input_dim)
+        else:
+            if weights is None:
+                weights = np.ones(Q)/float(Q)
+            if frequencies is None:
+                frequencies = .5 * np.random.rand(Q)
+            if lengthscales is None:
+                lengthscales =  np.random.rand(Q) * 10
+
+            assert len(weights.shape) == 1 and len(weights) == Q
+            assert len(lengthscales.shape) == 1 and len(lengthscales) == Q
+            assert len(frequencies.shape) == 1 and len(frequencies) == Q
+
+        self.ARD = ARD
         self.Q = Q
         self.weights = Param(weights, transforms.positive)
         self.frequencies = Param(frequencies, transforms.positive)
@@ -406,8 +421,11 @@ class SM(Kern):
         tau = self._tau(X, X2)
         K_tau = tf.tile(tf.expand_dims(tau, 2), [1,1,self.Q,1])
 
-        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * (self.frequencies), axis=3))
-        exp = tf.exp(-2 * np.pi**2 * tf.reduce_sum(tf.square(K_tau / tf.exp(self.lengthscales)), axis=3))
+        lengthscales = self.lengthscales if self.ARD else self._expand_and_tile(self.lengthscales, 2, 1, self.input_dim)
+        frequencies = self.frequencies if self.ARD else self._expand_and_tile(self.frequencies, 2, 1, self.input_dim)
+
+        cos = tf.cos(2 * np.pi * tf.reduce_sum(K_tau * (frequencies), axis=3))
+        exp = tf.exp(-2 * np.pi**2 * tf.reduce_sum(tf.square(K_tau / tf.exp(lengthscales)), axis=3))
         return tf.reduce_sum(self.weights * exp * cos, axis=2)
 
 
@@ -421,6 +439,29 @@ class SM(Kern):
         X2 = tf.tile(tf.expand_dims(X2, 1), [1, N, 1])
         X2 = tf.transpose(X2, perm=[1, 0, 2])
         return tf.subtract(X,X2)
+
+    def _expand_and_tile(self, tensor, rank, axis, multiple):
+        """
+        First expands the tensor in one dimension on the 'axis' position,
+        then tiles the tensor 'multiple' times on 'axis'.
+
+        Params:
+        :tensor: tensor that will be expanded and tiled
+        :rank: rank of the tensor after the operation
+        :axis: axis to expand the tensor
+        :multiple: number of times the tensor will be repeated
+
+        Example:
+            tensor A: with shape [2, 2]
+            rank: tf.rank(A) + 1 = 3
+            axis: 1
+            multiple: 3
+
+            returns: tf.tile(tf.expand_dims(A,axis), [1,multiple,1])
+            The result is now rank 3 with shape [2, 3, 2]
+        """
+        return tf.tile(tf.expand_dims(tensor, axis), \
+                       tf.stack([(multiple if ax == axis else 1) for ax in range(rank) ]))
 
 class Linear(Kern):
     """
