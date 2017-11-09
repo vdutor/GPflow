@@ -31,7 +31,7 @@ def mvhermgauss(H, D):
     return x, w
 
 
-def mvnquad(f, means, covs, H, Din, Dout=()):
+def mvnquad(f, means, covs, H, Din, Dout=(), chol=False):
     """
     Computes N Gaussian expectation integrals of a single function 'f'
     using Gauss-Hermite quadrature.
@@ -48,7 +48,7 @@ def mvnquad(f, means, covs, H, Din, Dout=()):
     N = tf.shape(means)[0]
 
     # transform points based on Gaussian parameters
-    chol_cov = tf.cholesky(covs)  # NxDxD
+    chol_cov = tf.cholesky(covs)  if not chol else covs # NxDxD
     Xt = tf.matmul(chol_cov, tf.tile(xn[None, :, :], (N, 1, 1)), transpose_b=True)  # NxDxH**D
     X = 2.0 ** 0.5 * Xt + tf.expand_dims(means, 2)  # NxDxH**D
     Xr = tf.reshape(tf.transpose(X, [2, 0, 1]), (-1, Din))  # (H**D*N)xD

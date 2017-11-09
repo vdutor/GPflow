@@ -5,12 +5,16 @@ from gpflow import settings
 from gpflow import likelihoods
 from gpflow import transforms
 from gpflow import kernels
+from gpflow import conditionals
+from gpflow import kullback_leiblers
+from gpflow import features
 
 from gpflow.models.model import GPModel
 from gpflow.models.gpr import GPR
-from gpflow.params import Parameter
+from gpflow.params import Parameter, DataHolder, Minibatch
 from gpflow.decors import params_as_tensors
 from gpflow.mean_functions import Zero
+from gpflow.quadrature import mvnquad
 
 
 class GPLVM(GPR):
@@ -177,6 +181,98 @@ class BayesianGPLVM(GPModel):
             var = tf.tile(tf.expand_dims(var, 1), shape)
         return mean + self.mean_function(Xnew), var
 
+
+class BayesianGPLVM_Optimal_qX(GPModel):
+
+    def __init__(self, latent_dim, Y, kern, feat, *,
+                    H = 15,
+                    Z = None,
+                    X_prior_mean=None,
+                    X_prior_var=None,
+                    minibatch_size=None,
+                    whiten=True,
+                    q_diag = False,
+                    mean_function=Zero()):
+
+        num_data = Y.shape[0]
+
+        if X_prior_mean is None:
+            X_prior_mean = np.zeros((num_data, latent_dim))
+        if X_prior_var is None:
+            X_prior_var = np.ones((num_data, latent_dim))
+
+        X = np.concatenate([X_prior_mean, X_prior_var], axis=1)
+        print(X.shape)
+
+        if minibatch_size is None:
+            minibatch_size = num_data
+            X = DataHolder(X)
+            Y = DataHolder(Y)
+        else:
+            X = Minibatch(X, batch_size=minibatch_size, seed=0)
+            Y = Minibatch(Y, batch_size=minibatch_size, seed=0)
+
+        # init the super class, accept args
+        GPModel.__init__(self, X, Y, kern, likelihoods.Gaussian(), mean_function)
+
+        self.X_prior_mean = X_prior_mean
+        self.X_prior_var = X_prior_var
+
+        self.minibatch_size = minibatch_size
+        self.latent_dim = latent_dim
+        self.num_data = Y.shape[0]
+        self.num_func = Y.shape[1]
+        self.H = H
+
+        self.whiten = whiten
+        self.q_diag = q_diag
+        self.feat = features.inducingpoint_wrapper(feat, Z)
+        self.num_inducing = len(self.feat)
+
+        # init variational parameters
+        self.q_mu = Parameter(np.zeros((self.num_inducing, self.num_func), dtype=settings.np_float))
+        if self.q_diag:
+            self.q_sqrt = Parameter(np.ones((self.num_inducing, self.num_func), dtype=settings.np_float), transforms.positive)
+        else:
+            q_sqrt = np.array([np.eye(self.num_inducing, dtype=settings.np_float) for _ in range(self.num_func)]).swapaxes(0, 2)
+            self.q_sqrt = Parameter(q_sqrt, transform=transforms.LowerTriangular(self.num_inducing, self.num_func))
+
+    @params_as_tensors
+    def _build_likelihood(self):
+        X_prior_mean = self.X[:, :self.latent_dim]
+        X_prior_var = tf.matrix_diag(self.X[:, -self.latent_dim:])
+
+        minibatch_size_float = tf.cast(self.minibatch_size, dtype=settings.tf_float)
+        scale = tf.cast(self.num_data, dtype=settings.tf_float) / minibatch_size_float
+
+        KL_u = self.build_prior_KL_qU()
+
+        def expected_log_likelihood(X):
+            Y_tiled = tf.tile(self.Y[None, :, :], [self.H**self.latent_dim, 1, 1])
+            Y_reshaped = tf.reshape(Y_tiled, [-1, self.num_func])
+            q_f_mean, q_f_var = conditionals.feature_conditional(X, self.feat, self.kern, self.q_mu, q_sqrt=self.q_sqrt, whiten=self.whiten)
+            psi = tf.reduce_sum(self.likelihood.variational_expectations(q_f_mean, q_f_var, Y_reshaped), axis=1)
+            return tf.exp(psi)
+
+        Zn = mvnquad(expected_log_likelihood, X_prior_mean, X_prior_var ** 0.5, self.H, self.latent_dim, Dout=(1,), chol=True)
+        log_Z = tf.reduce_sum(tf.log(Zn), axis=0)
+
+        return - log_Z * scale - KL_u
+
+    @params_as_tensors
+    def build_prior_KL_qU(self):
+        if self.whiten:
+            if self.q_diag:
+                KL = kullback_leiblers.gauss_kl_white_diag(self.q_mu, self.q_sqrt)
+            else:
+                KL = kullback_leiblers.gauss_kl_white(self.q_mu, self.q_sqrt)
+        else:
+            K = self.feat.Kuu(self.kern, jitter=settings.numerics.jitter_level)
+            if self.q_diag:
+                KL = kullback_leiblers.gauss_kl_diag(self.q_mu, self.q_sqrt, K)
+            else:
+                KL = kullback_leiblers.gauss_kl(self.q_mu, self.q_sqrt, K)
+        return KL
 
 def PCA_reduce(X, Q):
     """
