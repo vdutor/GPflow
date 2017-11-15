@@ -98,6 +98,14 @@ class TestKernExpDelta(GPflowTestCase):
                 orig = k.compute_Kdiag(self.Xmu)
                 self.assertTrue(np.allclose(orig, kdiag))
 
+    def test_eKxx(self):
+        for k in self.kernels:
+            with self.test_context():
+                k.compile()
+                Kxx = k.compute_eKxx(self.Xmu, self.Xcov)
+                orig = k.compute_K_symm(self.Xmu)
+                self.assertTrue(np.allclose(orig, Kxx))
+
     def test_exKxz(self):
         covall = np.array([self.Xcov, self.Xcovc])
         for k in self.kernels:
@@ -169,6 +177,14 @@ class TestKernExpActiveDims(GPflowTestCase):
                     k.active_dims,
                     axis=-2)
                 b = pk.compute_eKdiag(self.Xmu[:, k.active_dims], sliced[0, :, :, :])
+                _assert_pdeq(self, a, b, k)
+
+                a = k.compute_eKxx(self.Xmu, self.Xcov[0, :, :, :])
+                sliced = np.take(
+                    np.take(self.Xcov, k.active_dims, axis=-1),
+                    k.active_dims,
+                    axis=-2)
+                b = pk.compute_eKxx(self.Xmu[:, k.active_dims], sliced[0, :, :, :])
                 _assert_pdeq(self, a, b, k)
 
                 a = k.compute_eKxz(self.Z, self.Xmu, self.Xcov[0, :, :, :])
@@ -343,6 +359,19 @@ class TestKernExpQuadrature(GPflowTestCase):
                 b = ek.compute_eKdiag(self.Xmu, self.Xcov[0, :, :, :])
                 _assert_pdeq(self, a, b, k, i, len(self.kernels))
 
+    def test_eKxx(self):
+        aa, bb = [], []
+        for k, ek in zip(self.kernels, self.ekernels):
+            with self.test_context():
+                k.num_gauss_hermite_points = self.num_gauss_hermite_points
+                k.compile()
+                ek.compile()
+                a = k.compute_eKxx(self.Xmu, self.Xcov[0, :, :, :])
+                b = ek.compute_eKxx(self.Xmu, self.Xcov[0, :, :, :])
+                aa.append(a)
+                bb.append(b)
+                _ = [_assert_pdeq(self, a, b, k) for a, b, k in zip(aa, bb, self.kernels)]
+
     def test_eKxz(self):
         aa, bb = [], []
         for k, ek in zip(self.kernels, self.ekernels):
@@ -426,6 +455,14 @@ class TestKernProd(GPflowTestCase):
             self.ekernel.compile()
             a = self.kernel.compute_eKdiag(self.Xmu, self.Xcov)
             b = self.ekernel.compute_eKdiag(self.Xmu, self.Xcov)
+            _assert_pdeq(self, a, b)
+
+    def test_eKxx(self):
+        with self.test_context():
+            self.kernel.compile()
+            self.ekernel.compile()
+            a = self.kernel.compute_eKxx(self.Xmu, self.Xcov)
+            b = self.ekernel.compute_eKxx(self.Xmu, self.Xcov)
             _assert_pdeq(self, a, b)
 
     def test_eKxz(self):
@@ -520,6 +557,14 @@ class TestKernExpDiagXcov(GPflowTestCase):
                 k.compile()
                 d = k.compute_eKdiag(self.Xmu, self.Xcov)
                 e = k.compute_eKdiag(self.Xmu, self.Xcov_diag)
+                _assert_pdeq(self, d, e, k, i, len(self.kernels))
+
+    def test_eKxx(self):
+        for i, k in enumerate(self.kernels + self.ekernels):
+            with self.test_context():
+                k.compile()
+                d = k.compute_eKxx(self.Xmu, self.Xcov)
+                e = k.compute_eKxx(self.Xmu, self.Xcov_diag)
                 _assert_pdeq(self, d, e, k, i, len(self.kernels))
 
     def test_eKxz(self):

@@ -19,8 +19,42 @@ class RBF(kernels.RBF):
         """
         return self.Kdiag(X)
 
+
     @params_as_tensors
-    def eKxz(self, Z, Xmu, Xcov):
+    def eKxx(self, Xmu, Xcov):
+        """
+        Also known as phi_0 = int p(x1) p(x2) k(x1, x2) dx1 dx2
+        :param Xmu: X mean (NxD)
+        :param Xcov: NxDxD
+        :return: NxN
+        """
+        # use only active dimensions
+        Xcov = self._slice_cov(Xcov)
+        Xmu, _ = self._slice(Xmu, None)
+        D = tf.shape(Xmu)[1]
+        if self.ARD:
+            lengthscales = self.lengthscales
+        else:
+            lengthscales = tf.zeros((D,), dtype=settings.tf_float) + self.lengthscales
+
+        c = tf.reduce_prod((2 * nppi)**0.5 * lengthscales)
+
+        Sigma = Xcov[None, :, :, :] + Xcov[:, None, :, :] + tf.matrix_diag(lengthscales ** 2) # N x N x D x D
+        Sigma_chol = tf.cholesky(Sigma) # tf.eye(D, dtype=settings.tf_float) * settings.jitter)
+
+        Xmu_div = Xmu[None, :, :] - Xmu[:, None, :] # N x N x D
+        Sigma_chol_inv_Xmu_div = tf.matrix_triangular_solve(Sigma_chol, Xmu_div[..., None], lower=True) # N x N x D x 1
+        gauss_exp = tf.exp(-0.5 * tf.reduce_sum(tf.squeeze(Sigma_chol_inv_Xmu_div, axis=3) ** 2, axis=2))
+
+        # gauss_norm = tf.matrix_determinant(2 * nppi * Sigma) ** (-0.5) # N x N
+
+        gauss_norm = tf.reduce_prod(2 * nppi * (tf.matrix_diag_part(Sigma_chol) ** 2), axis=2) ** (-0.5) # N x N
+
+        return self.variance * c * gauss_norm * gauss_exp
+
+
+    @params_as_tensors
+    def eKxz(self, Z, Xmu, Xcov, presliced=False):
         """
         Also known as phi_1: <K_{x, Z}>_{q(x)}.
         :param Z: MxD inducing inputs
@@ -29,8 +63,9 @@ class RBF(kernels.RBF):
         :return: NxM
         """
         # use only active dimensions
-        Xcov = self._slice_cov(Xcov)
-        Z, Xmu = self._slice(Z, Xmu)
+        if not presliced:
+            Xcov = self._slice_cov(Xcov)
+            Z, Xmu = self._slice(Z, Xmu)
         D = tf.shape(Xmu)[1]
         if self.ARD:
             lengthscales = self.lengthscales
@@ -119,6 +154,7 @@ class RBF(kernels.RBF):
 
 
 class Linear(kernels.Linear):
+
     @params_as_tensors
     def eKdiag(self, X, Xcov):
         if self.ARD:
@@ -129,11 +165,20 @@ class Linear(kernels.Linear):
         return self.variance * (tf.reduce_sum(tf.square(X), 1) + tf.reduce_sum(tf.matrix_diag_part(Xcov), 1))
 
     @params_as_tensors
-    def eKxz(self, Z, Xmu, Xcov):
+    def eKxx(self, Xmu, Xcov):
         if self.ARD:
             raise NotImplementedError
         # use only active dimensions
-        Z, Xmu = self._slice(Z, Xmu)
+        Xmu, _ = self._slice(Xmu, None)
+        return self.variance * tf.matmul(Xmu, Xmu, transpose_b=True)
+
+    @params_as_tensors
+    def eKxz(self, Z, Xmu, Xcov, presliced=False):
+        if self.ARD:
+            raise NotImplementedError
+        # use only active dimensions
+        if not presliced:
+            Z, Xmu = self._slice(Z, Xmu)
         return self.variance * tf.matmul(Xmu, Z, transpose_b=True)
 
     @params_as_tensors
@@ -184,8 +229,11 @@ class Add(kernels.Add):
     def eKdiag(self, X, Xcov):
         return reduce(tf.add, [k.eKdiag(X, Xcov) for k in self.kern_list])
 
-    def eKxz(self, Z, Xmu, Xcov):
-        return reduce(tf.add, [k.eKxz(Z, Xmu, Xcov) for k in self.kern_list])
+    def eKxx(self, Xmu, Xcov):
+        return reduce(tf.add, [k.eKxx(Xmu, Xcov) for k in self.kern_list])
+
+    def eKxz(self, Z, Xmu, Xcov, presliced=False):
+        return reduce(tf.add, [k.eKxz(Z, Xmu, Xcov, presliced=presliced) for k in self.kern_list])
 
     def exKxz(self, Z, Xmu, Xcov):
         return reduce(tf.add, [k.exKxz(Z, Xmu, Xcov) for k in self.kern_list])
@@ -297,14 +345,23 @@ class Prod(kernels.Prod):
         ]):
             return reduce(tf.multiply, [k.eKdiag(Xmu, Xcov) for k in self.kern_list])
 
-    def eKxz(self, Z, Xmu, Xcov):
+    def eKxx(self, Xmu, Xcov):
         if not self.on_separate_dimensions:
             raise NotImplementedError("Prod currently needs to be defined on separate dimensions.")  # pragma: no cover
         with tf.control_dependencies([
             tf.assert_equal(tf.rank(Xcov), 2,
                             message="Prod currently only supports diagonal Xcov.", name="assert_Xcov_diag"),
         ]):
-            return reduce(tf.multiply, [k.eKxz(Z, Xmu, Xcov) for k in self.kern_list])
+            return reduce(tf.multiply, [k.eKxx(Xmu, Xcov) for k in self.kern_list])
+
+    def eKxz(self, Z, Xmu, Xcov, presliced=False):
+        if not self.on_separate_dimensions:
+            raise NotImplementedError("Prod currently needs to be defined on separate dimensions.")  # pragma: no cover
+        with tf.control_dependencies([
+            tf.assert_equal(tf.rank(Xcov), 2,
+                            message="Prod currently only supports diagonal Xcov.", name="assert_Xcov_diag"),
+        ]):
+            return reduce(tf.multiply, [k.eKxz(Z, Xmu, Xcov, presliced=presliced) for k in self.kern_list])
 
     def eKzxKxz(self, Z, Xmu, Xcov):
         if not self.on_separate_dimensions:

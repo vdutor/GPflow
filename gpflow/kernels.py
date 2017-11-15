@@ -82,6 +82,11 @@ class Kern(Parameterized):
         return self.eKdiag(X, Xcov)
 
     @autoflow((settings.tf_float, [None, None]),
+              (settings.tf_float,))
+    def compute_eKxx(self, Xmu, Xcov):
+        return self.eKxx(Xmu, Xcov)
+
+    @autoflow((settings.tf_float, [None, None]),
               (settings.tf_float, [None, None]),
               (settings.tf_float,))
     def compute_eKxz(self, Z, Xmu, Xcov):
@@ -111,7 +116,25 @@ class Kern(Parameterized):
                        Xmu, Xcov,
                        self.num_gauss_hermite_points, self.input_dim)  # N
 
-    def eKxz(self, Z, Xmu, Xcov):
+
+    def eKxx(self, Xmu, Xcov):
+        """
+        Computes <K_xx>_q(x).
+        :param Xmu: Mean (NxD)
+        :param Xcov: Covariance (NxDxD or NxD)
+        :return: (N)
+        """
+        self._check_quadrature()
+        Xmu, _ = self._slice(Xmu, None)
+        Xcov = self._slice_cov(Xcov)
+
+        N = tf.shape(Xmu)[0]
+
+        return mvnquad(lambda x: tf.matrix_transpose(self.eKxz(x, Xmu, Xcov, presliced=True)),
+                       Xmu, Xcov, self.num_gauss_hermite_points, self.input_dim, (N,))
+
+
+    def eKxz(self, Z, Xmu, Xcov, presliced=False):
         """
         Computes <K_xz>_q(x) using quadrature.
         :param Z: Fixed inputs (MxD).
@@ -120,8 +143,9 @@ class Kern(Parameterized):
         :return: (NxM)
         """
         self._check_quadrature()
-        Xmu, Z = self._slice(Xmu, Z)
-        Xcov = self._slice_cov(Xcov)
+        if not presliced:
+            Xmu, Z = self._slice(Xmu, Z)
+            Xcov = self._slice_cov(Xcov)
         M = tf.shape(Z)[0]
         return mvnquad(lambda x: self.K(x, Z, presliced=True), Xmu, Xcov, self.num_gauss_hermite_points,
                        self.input_dim, Dout=(M,))  # (H**DxNxD, H**D)
