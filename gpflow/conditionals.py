@@ -126,8 +126,7 @@ def base_conditional(Kmn, Kmm, Knn, f, full_cov=False, q_sqrt=None, whiten=False
 
 
 @name_scope()
-def uncertain_conditional(Xnew_mu, Xnew_var, feat, kern, q_mu, q_sqrt,
-                          full_cov_output=False, full_cov=False, whiten=False):
+def uncertain_conditional(Xnew_mu, Xnew_var, feat, kern, q_mu, q_sqrt, covariance=None, whiten=False):
     """
     Calculates the conditional for uncertain inputs Xnew, p(Xnew) = N(Xnew_mu, Xnew_var).
     See ``conditional`` documentation for further reference.
@@ -138,13 +137,15 @@ def uncertain_conditional(Xnew_mu, Xnew_var, feat, kern, q_mu, q_sqrt,
     :param kern: gpflow kernel or ekernel object.
     :param q_mu: mean inducing points, size M x Dout
     :param q_sqrt: cholesky of the covariance matrix of the inducing points, size M x M x Dout
-    :param full_cov_output: boolean wheter to compute covariance between output dimension.
-                            Influences the shape of return value ``fvar``. Default is False
+    :param full_cov: [None, "input", "output"]
+                    Influences the shape of return value ``fvar``. Default is None
     :param whiten: boolean whether to whiten the representation. Default is False.
 
     :return fmean, fvar: mean and covariance of the conditional, size ``fmean`` is N x Dout,
-            size ``fvar`` depends on ``full_cov_output``: if True ``f_var`` is N x Dout x Dout,
-            if False then ``f_var`` is N x Dout
+            size ``fvar`` depends on ``full_cov``:
+            - None: N x D
+            - input:  N x N x D (covariance between inputs, corresponds to full_cov of conditional)
+            - output: N x D x D (covariance between outputs)
     """
 
     # TODO: Tensorflow 1.3 doesn't support broadcasting in``tf.matmul`` and
@@ -155,13 +156,6 @@ def uncertain_conditional(Xnew_mu, Xnew_var, feat, kern, q_mu, q_sqrt,
 
     if not isinstance(feat, InducingPoints):
         raise NotImplementedError
-
-    if full_cov:
-        # TODO: ``full_cov`` True would return a ``fvar`` of shape N x N x D x D,
-        # encoding the covariance between input datapoints as well.
-        # This is not implemented as this feature is only used for plotting purposes.
-        raise NotImplementedError
-
 
     num_data = tf.shape(Xnew_mu)[0] # number of new inputs (N)
     num_func = tf.shape(q_mu)[1] # output dimension (D)
@@ -188,7 +182,7 @@ def uncertain_conditional(Xnew_mu, Xnew_var, feat, kern, q_mu, q_sqrt,
 
     cov = tf.matmul(q_sqrt_r, q_sqrt_r, transpose_b=True) # D x M x M
 
-    if full_cov_output:
+    if covariance == "output":
         fvar = (
                 tf.matrix_diag(tf.tile((eKff - tf.trace(Li_eKuffu_Lit))[:, None], [1, num_func])) +
                 tf.matrix_diag(tf.einsum("nij,dji->nd", Li_eKuffu_Lit, cov)) +
@@ -204,6 +198,15 @@ def uncertain_conditional(Xnew_mu, Xnew_var, feat, kern, q_mu, q_sqrt,
                 tf.einsum("ig,nij,jg->ng", q_mu, Li_eKuffu_Lit, q_mu) -
                 fmean ** 2
         )
+
+    if covariance == "input":
+        eKff = kern.eKxx(Xnew_mu, Xnew_var) # N x N
+        eKfu = feat.eKfu(kern, Xnew_mu, Xnew_var) # N x M
+        _, fvar_off_diag = base_conditional(tf.transpose(eKfu), Kuu, eKff,
+                q_mu, full_cov=True, q_sqrt=q_sqrt, whiten=whiten) # N x N x D
+        # replace the diagonal elements
+        fvar = tf.matrix_set_diag(tf.transpose(fvar_off_diag, (2, 0, 1)), tf.transpose(fvar))
+        fvar = tf.transpose(fvar, (1, 2, 0))
 
     return fmean, fvar
 
