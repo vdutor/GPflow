@@ -77,18 +77,19 @@ class InducingPointsBase(InducingFeature):
     def __len__(self):
         return self.Z.shape[0]
 
+
 class InducingPoints(InducingPointsBase):
     pass
 
-@dispatch()
-def Kuu(feat: InducingPoints, kern: kernels.Kernel, *, jitter=0.0):
+@dispatch(InducingPoints, kernels.Kernel)
+def Kuu(feat, kern, *, jitter=0.0):
     with params_as_tensors_for(feat):
         Kzz = kern.K(feat.Z)
         Kzz += jitter * tf.eye(len(feat), dtype=settings.dtypes.float_type)
     return Kzz
 
-@dispatch()
-def Kuf(feat: InducingPoints, kern: kernels.Kernel, Xnew: object):
+@dispatch(InducingPoints, kernels.Kernel, object)
+def Kuf(feat, kern, Xnew):
     with params_as_tensors_for(feat):
         Kzx = kern.K(feat.Z, Xnew)
     return Kzx
@@ -124,6 +125,7 @@ class Multiscale(InducingPointsBase):
         scales. sc: N x M x D.
         """
         return tf.reduce_sum(tf.square((tf.expand_dims(A, 1) - tf.expand_dims(B, 0)) / sc), 2)
+
 
 @dispatch(Multiscale, kernels.RBF, object)
 def Kuf(feat, kern, Xnew):

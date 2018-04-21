@@ -55,3 +55,6 @@ from .params import Minibatch
 from .params import Parameterized
 from .saver import Saver
 from .saver import SaverContext
+
+from . import multioutput
+from .multioutput import conditionals
