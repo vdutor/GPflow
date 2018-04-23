@@ -37,13 +37,13 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
     Same behaviour as conditional with non-multioutput kernels.
 
     The covariance matrices used to calculate the conditional have the following shape:
-    - Kuu: M x M 
+    - Kuu: M x M
     - Kuf: M x N
     - Kff: N or N x N
-    
+
     Further reference
     -----------------
-    - See `gpflow.conditionals._conditional` for a detailed explanation of 
+    - See `gpflow.conditionals._conditional` for a detailed explanation of
       conditional in the single-output case.
     - See the multiouput notebook for more information about the multiouput framework.
 
@@ -57,12 +57,12 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
     :param q_sqrt: matrix of standard-deviations or Cholesky matrices,
         size M x P or P x M x M.
     :param white: boolean of whether to use the whitened representation
-    :return: 
+    :return:
         - mean:     N x P
         - variance: N x P, P x N x N, N x P x P or N x P x N x P
         Please see `gpflow.conditional.expand_independent_outputs` for more information
         about the shape of the variance, depending on `full_cov` and `full_cov_output`.
-        
+
     """
     print("Conditional: SharedIndependentMof - SharedIndepedentMok")
 
@@ -87,13 +87,13 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
     Number of latent processes equals the number of outputs (L = P).
 
     The covariance matrices used to calculate the conditional have the following shape:
-    - Kuu: P x M x M 
+    - Kuu: P x M x M
     - Kuf: P x M x N
     - Kff: P x N or P x N x N
-    
+
     Further reference
     -----------------
-    - See `gpflow.conditionals._conditional` for a detailed explanation of 
+    - See `gpflow.conditionals._conditional` for a detailed explanation of
       conditional in the single-output case.
     - See the multiouput notebook for more information about the multiouput framework.
     - See above for the parameters and the return value.
@@ -103,7 +103,7 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
     # Following are: P x M x M  -  P x M x N  -  P x N(x N)
     Kmms = Kuu(feat, kern, jitter=settings.numerics.jitter_level)  # P x M x M
     Kmns = Kuf(feat, kern, Xnew)  # P x M x N
-    kern_list = kern.kern_list if isinstance(kern, Combination) else [kern.kern] * len(feat.feat_list)
+    kern_list = kern.kernels if isinstance(kern, Combination) else [kern.kern] * len(feat.feat_list)
     Knns = tf.stack([k.K(Xnew) if full_cov else k.Kdiag(Xnew) for k in kern_list], axis=0)
     fs = tf.transpose(f)[:, :, None]  # P x M x 1
     # P x 1 x M x M  or  P x M x 1
@@ -138,10 +138,10 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
     - Kuu: L x M x M
     - Kuf: M x L x N x P
     - Kff: N x P x N x P, N x P x P, N x P
-    
+
     Further reference
     -----------------
-    - See `gpflow.conditionals._conditional` for a detailed explanation of 
+    - See `gpflow.conditionals._conditional` for a detailed explanation of
       conditional in the single-output case.
     - See the multiouput notebook for more information about the multiouput framework.
     - See above for the parameters and the return value.
@@ -169,10 +169,10 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
     - Kuu: M x L x M x L
     - Kuf: M x L x N x P
     - Kff: N x P x N x P, N x P x P, N x P
-    
+
     Further reference
     -----------------
-    - See `gpflow.conditionals._conditional` for a detailed explanation of 
+    - See `gpflow.conditionals._conditional` for a detailed explanation of
       conditional in the single-output case.
     - See the multiouput notebook for more information about the multiouput framework.
 
@@ -214,10 +214,10 @@ def _conditional(Xnew, feat, kern, f, *, full_cov=False, full_cov_output=False, 
     - Kuu: L x M x M
     - Kuf: L x M x N
     - Kff: L x N or L x N x N
-    
+
     Further reference
     -----------------
-    - See `gpflow.conditionals._conditional` for a detailed explanation of 
+    - See `gpflow.conditionals._conditional` for a detailed explanation of
       conditional in the single-output case.
     - See the multiouput notebook for more information about the multiouput framework.
 
@@ -289,10 +289,10 @@ def independent_interdomain_conditional(Kmn, Kmm, Knn, f, *, full_cov=False, ful
     :param Knn: N x P  or  N x N  or  P x N x N  or  N x P x N x P
     :param f: data matrix, M x L
     :param q_sqrt: L x M x M  or  M x L
-    :param full_cov: calculate covariance between inputs 
+    :param full_cov: calculate covariance between inputs
     :param full_cov_output: calculate covariance between ouputs
     :param white: use whitened representation
-    :return: 
+    :return:
         - mean: N x P
         - variance: N x P, N x P x P, P x N x N, N x P x N x P
     """
@@ -356,10 +356,10 @@ def fully_correlated_conditional(Kmn, Kmm, Knn, f, *, full_cov=False, full_cov_o
     :param Knn: N x P or N x P x N x P
     :param f: data matrix, LM x 1
     :param q_sqrt: 1 x LM x LM  or 1 x ML
-    :param full_cov: calculate covariance between inputs 
+    :param full_cov: calculate covariance between inputs
     :param full_cov_output: calculate covariance between ouputs
     :param white: use whitened representation
-    :return: 
+    :return:
         - mean: N x P
         - variance: N x P, N x P x P, P x N x N, N x P x N x P
     """
@@ -381,10 +381,10 @@ def fully_correlated_conditional_repeat(Kmn, Kmm, Knn, f, *, full_cov=False, ful
     :param Knn: N x P or N x P x N x P
     :param f: data matrix, LM x R
     :param q_sqrt: R x LM x LM  or R x ML
-    :param full_cov: calculate covariance between inputs 
+    :param full_cov: calculate covariance between inputs
     :param full_cov_output: calculate covariance between ouputs
     :param white: use whitened representation
-    :return: 
+    :return:
         - mean: R x N x P
         - variance: R x N x P, R x N x P x P, R x P x N x N, R x N x P x N x P
     """

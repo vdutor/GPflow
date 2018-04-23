@@ -83,15 +83,15 @@ def Kuf(feat, kern, Xnew):
 
 @dispatch(SharedIndependentMof, SeparateIndependentMok, object)
 def Kuf(feat, kern, Xnew):
-    return tf.stack([Kuf(feat.feat, k, Xnew) for k in kern.kern_list], axis=0)  # L x M x N
+    return tf.stack([Kuf(feat.feat, k, Xnew) for k in kern.kernels], axis=0)  # L x M x N
 
 
 @dispatch(SeparateIndependentMof, SeparateIndependentMok, object)
 def Kuf(feat, kern, Xnew):
-    return tf.stack([Kuf(f, k, Xnew) for f, k in zip(feat.feat_list, kern.kern_list)], axis=0)  # L x M x N
+    return tf.stack([Kuf(f, k, Xnew) for f, k in zip(feat.feat_list, kern.kernels)], axis=0)  # L x M x N
 
 
-@dispatch((SeparateIndependentMof, SharedIndependentMof), SeparateMixedMok, object) 
+@dispatch((SeparateIndependentMof, SharedIndependentMof), SeparateMixedMok, object)
 def Kuf(feat, kern, Xnew):
     kuf_impl = Kuf.dispatch(type(feat), SeparateIndependentMok, object)
     K = tf.transpose(kuf_impl(feat, kern, Xnew), [1, 0, 2])  # M x L x N
@@ -100,7 +100,7 @@ def Kuf(feat, kern, Xnew):
 
 @dispatch(MixedKernelSharedMof, SeparateMixedMok, object)
 def Kuf(feat, kern, Xnew):
-    return tf.stack([Kuf(feat.feat, k, Xnew) for k in kern.kern_list], axis=0)  # L x M x N
+    return tf.stack([Kuf(feat.feat, k, Xnew) for k in kern.kernels], axis=0)  # L x M x N
 
 
 # ---------------------------------------------------------------------
@@ -124,7 +124,7 @@ def Kuu(feat, kern, *, jitter=0.0):
 
 @dispatch(SharedIndependentMof, (SeparateIndependentMok, SeparateMixedMok))
 def Kuu(feat, kern, *, jitter=0.0):
-    Kmm = tf.stack([Kuu(feat.feat, k) for k in kern.kern_list], axis=0)  # L x M x M
+    Kmm = tf.stack([Kuu(feat.feat, k) for k in kern.kernels], axis=0)  # L x M x M
     jittermat = tf.eye(len(feat), dtype=float_type)[None, :, :] * jitter
     return Kmm + jittermat
 
@@ -138,13 +138,13 @@ def Kuu(feat, kern, *, jitter):
 
 @dispatch(SeparateIndependentMof, (SeparateIndependentMok, SeparateMixedMok))
 def Kuu(feat, kern, *, jitter=0.0):
-    Kmm = tf.stack([Kuu(f, k) for f, k in zip(feat.feat_list, kern.kern_list)], axis=0)  # L x M x M
+    Kmm = tf.stack([Kuu(f, k) for f, k in zip(feat.feat_list, kern.kernels)], axis=0)  # L x M x M
     jittermat = tf.eye(len(feat), dtype=float_type)[None, :, :] * jitter
     return Kmm + jittermat
 
 
 @dispatch(MixedKernelSharedMof, SeparateMixedMok)
 def Kuu(feat, kern, *, jitter=0.0):
-    Kmm = tf.stack([Kuu(feat.feat, k) for k in kern.kern_list], axis=0)  # L x M x M
+    Kmm = tf.stack([Kuu(feat.feat, k) for k in kern.kernels], axis=0)  # L x M x M
     jittermat = tf.eye(len(feat), dtype=float_type)[None, :, :] * jitter
     return Kmm + jittermat
